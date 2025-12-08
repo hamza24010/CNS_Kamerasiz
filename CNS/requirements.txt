@@ -1,0 +1,12 @@
+numpy==1.26.4
+opencv-python-headless==4.10.0.84
+requests==2.32.3
+gpiozero==2.0.1
+rpi-lgpio==0.6
+spidev==3.5
+smbus2==0.4.2
+pyserial==3.5
+matplotlib
+PyQt5
+reportlab
+Pillow
