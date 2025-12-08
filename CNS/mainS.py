@@ -106,22 +106,42 @@ class ISPM15Simulator:
         self.start_temp = get_online_temperature()
         print(f"Simülasyon Başlatıldı. Dış Ortam: {self.start_temp:.2f}°C")
         
-        # Parametreler (DB Analizinden Türetilmiştir)
-        # K Values (per minute): Min 0.007, Max 0.016
-        # Ambient Heating Rate: ~0.85 deg/min
-        # Ambient Cooling Rate: ~0.50 deg/min
+        # --- HİBRİT FİZİK MODELİ (DB1 vs DB2) ---
+        # Efficiency (Verim): 0.0 (Yavaş/Eski) <-> 1.0 (Hızlı/Yeni)
+        # Her çalıştırmada rastgele bir fırın karakteristiği seçilir.
+        self.efficiency = random.random()
+        print(f"Fırın Verimlilik Faktörü: {self.efficiency:.2f} (0=Yavaş/Gürültülü, 1=Hızlı/Temiz)")
         
+        # PROFIL A (Yavaş/Gürültülü - mainDb.sqlite)
+        # Heat Rate: 1.6, K: 0.007-0.018, Noise: High
+
+        # PROFIL B (Hızlı/Temiz - mainDb1.sqlite)
+        # Heat Rate: 2.5, K: 0.015-0.022, Noise: Low
+
+        # Parametre İnterpolasyonu
+        def lerp(a, b, t): return a + t * (b - a)
+        
+        self.p_heat_rate = lerp(1.6, 2.5, self.efficiency)
+        self.p_cool_rate = lerp(0.5, 0.8, self.efficiency) # Soğuma hızı tahmini
+        
+        self.p_k_min = lerp(0.007, 0.015, self.efficiency)
+        self.p_k_max = lerp(0.018, 0.022, self.efficiency)
+
+        self.p_noise_amb = lerp(3.0, 2.0, self.efficiency)
+        self.p_noise_prob = lerp(1.5, 0.35, self.efficiency)
+
+        print(f"   -> Isınma Hızı: {self.p_heat_rate:.2f} C/dk")
+        print(f"   -> İletim Katsayıları (K): {self.p_k_min:.4f} - {self.p_k_max:.4f}")
+        print(f"   -> Gürültü Seviyesi: Ortam~{self.p_noise_amb:.1f}, Prob~{self.p_noise_prob:.1f}")
+
         self.sensors = []
-        
-        # 13 Sensör için K değerlerini dağıt (0.007 -> 0.016)
-        min_k = 0.007
-        max_k = 0.016
-        
+
+        # 13 Sensör için K değerlerini dağıt
         for i in range(13):
-            # Linear interpolation with slight randomness
+            # Linear interpolation across sensors (Some slow, some fast)
             factor = i / 12.0
-            k = min_k + (factor * (max_k - min_k))
-            k += random.uniform(-0.0005, 0.0005) # Küçük varyasyon
+            k = self.p_k_min + (factor * (self.p_k_max - self.p_k_min))
+            k += random.uniform(-0.001, 0.001) # Varyasyon
             
             self.sensors.append({
                 "val": self.start_temp + random.uniform(-0.5, 0.5),
@@ -140,7 +160,6 @@ class ISPM15Simulator:
 
     def calculate_step(self, active_sensors_mask, desired_temp):
         # Zaman Delta (Dakika cinsinden)
-        # settings.DESIRED_SECONDS genellikle 60 saniye olur.
         dt_minutes = settings.DESIRED_SECONDS / 60.0
 
         # 1. Sanal Termostat Kontrolü
@@ -151,39 +170,31 @@ class ISPM15Simulator:
         elif avg_ortam <= settings.RESISTANCE_MIN:
             self.virtual_heater_on = True
 
-        # Isıtma etkin mi? (Hem röle açık olacak, hem termostat onayı verecek)
         effective_heating = self.rezistans_aktif and self.virtual_heater_on and not self.sogutma_modu
 
         # 2. Ortam Sıcaklığı Fizigi
-        # Heating Rate: ~0.85 C/min, Cooling Rate: ~0.5 C/min
-        # Noise: StdDev ~3.0
-
-        heating_rate = 0.85
-        cooling_rate = 0.50
-
         base_change = 0.0
         if effective_heating:
-            base_change = heating_rate * dt_minutes
+            base_change = self.p_heat_rate * dt_minutes
         else:
-            base_change = -cooling_rate * dt_minutes
+            base_change = -self.p_cool_rate * dt_minutes
 
         # Ortam sensörlerini güncelle
         for i in range(2):
-            # Noise ekle (Random walk + white noise)
-            step_noise = random.gauss(0, 0.2) # Anlık değişim gürültüsü
-            measurement_noise = random.gauss(0, 1.5) # Ölçüm gürültüsü (daha büyük)
+            # Noise: Random Walk (0.2) + White Noise (Variable)
+            step_noise = random.gauss(0, 0.2)
+            measurement_noise = random.gauss(0, self.p_noise_amb)
 
             self.at_states[i]["val"] += base_change + step_noise
 
-            # AT1 ve AT2 arası fark oluşması için küçük kayma
+            # AT1 ve AT2 arası fark (Eski fırınlarda daha çok fark olur)
+            spread_factor = 0.2 * (1.0 - self.efficiency) # Verim düşükse spread yüksek
             if i == 1:
-                self.at_states[i]["val"] += random.uniform(-0.1, 0.1) * dt_minutes
+                self.at_states[i]["val"] += random.uniform(-spread_factor, spread_factor) * dt_minutes
 
         # 3. Sensör Fizigi (Newton's Law of Cooling/Heating)
-        # dT = k * (T_ambient - T_sensor) * dt
-
         output_values = [0.0] * 15
-        current_takoz_vals = [] # İstatistik için geçerli sensör değerleri
+        current_takoz_vals = []
 
         avg_ortam_curr = (self.at_states[0]["val"] + self.at_states[1]["val"]) / 2.0
         
@@ -195,20 +206,21 @@ class ISPM15Simulator:
                 delta_T = s["k"] * (avg_ortam_curr - s["val"]) * dt_minutes
                 s["val"] += delta_T
                 
-                # Ölçüm Noise (Prob Noise ~1.5 C)
-                # Not: DB analizinde noise 1.5 - 1.7 çıktı.
-                # Ancak bu ham veri noise'u. Simülasyonda çok zıplama yapabilir.
-                # Biraz daha yumuşak bir noise ekleyip, rapor çıktısında noise'lu gösterebiliriz.
-                # Şimdilik 0.5 ile deneyelim, 1.5 çok agresif görünebilir grafiklerde.
-                noise = random.gauss(0, 0.5)
+                # Ölçüm Noise
+                # Gürültü, sıcaklık arttıkça veya değişim hızlıyken artabilir ama şimdilik sabit
+                noise = random.gauss(0, self.p_noise_prob)
                 
+                # Verim Düşükse (Eski Fırın) ara sıra "Spike" atabilir
+                if self.efficiency < 0.3 and random.random() < 0.01:
+                    noise += random.choice([-2.0, 2.0]) # Anlık sıçrama
+
                 final_val = s["val"] + noise
                 output_values[i] = final_val
                 current_takoz_vals.append(final_val)
         
         # Ortam Sensörleri Çıktısı (Noise eklenmiş hali)
-        if active_sensors_mask[13]: output_values[13] = self.at_states[0]["val"] + random.gauss(0, 1.0)
-        if active_sensors_mask[14]: output_values[14] = self.at_states[1]["val"] + random.gauss(0, 1.0)
+        if active_sensors_mask[13]: output_values[13] = self.at_states[0]["val"] + random.gauss(0, self.p_noise_amb * 0.5)
+        if active_sensors_mask[14]: output_values[14] = self.at_states[1]["val"] + random.gauss(0, self.p_noise_amb * 0.5)
         
         # 4. Hedef Kontrolü
         if not current_takoz_vals:
