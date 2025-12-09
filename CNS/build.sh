@@ -9,21 +9,21 @@ echo "Creating build environment..."
 if ! python3 -m venv build_venv --system-site-packages; then
     echo "venv module missing. Attempting to install..."
     if [ "$EUID" -eq 0 ]; then
-        apt-get update && apt-get install -y python3-venv python3-pyqt5 || apt-get install -y python3.12-venv python3-pyqt5
+        apt-get update && apt-get install -y python3-venv python3-pyqt5 python3-opencv || apt-get install -y python3.12-venv python3-pyqt5 python3-opencv
         python3 -m venv build_venv --system-site-packages
     else
-        echo "Error: python3-venv is missing. Please run: sudo apt install python3-venv python3-pyqt5"
+        echo "Error: python3-venv is missing. Please run: sudo apt install python3-venv python3-pyqt5 python3-opencv"
         exit 1
     fi
 fi
 source build_venv/bin/activate
 
 echo "Installing dependencies..."
-# Ensure system PyQt5 is installed
+# Ensure system PyQt5 and OpenCV is installed
 if [ "$EUID" -eq 0 ]; then
-    apt-get install -y python3-pyqt5
+    apt-get install -y python3-pyqt5 python3-opencv
 else
-    echo "Note: Ensure python3-pyqt5 is installed via apt if not already present."
+    echo "Note: Ensure python3-pyqt5 and python3-opencv are installed via apt if not already present."
 fi
 
 pip install --upgrade pip
@@ -47,6 +47,7 @@ pyinstaller --noconfirm --onefile --windowed --name "CNS_App" \
     --hidden-import "PIL" \
     --hidden-import "reportlab" \
     --hidden-import "sqlite3" \
+    --hidden-import "cv2" \
     --icon="icon.png" \
     "mainS.py"
 

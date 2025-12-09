@@ -32,6 +32,7 @@ fi
 
 # Copy assets
 cp "mainDb.sqlite" "$INSTALL_DIR/" || echo "Warning: mainDb.sqlite not found, skipping."
+cp "mainDb1.sqlite" "$INSTALL_DIR/" || echo "Warning: mainDb1.sqlite not found, skipping."
 cp "icon.png" "$INSTALL_DIR/$ICON_NAME" || echo "Warning: icon.png not found, skipping."
 cp "DejaVuSans.ttf" "$INSTALL_DIR/" || echo "Warning: DejaVuSans.ttf not found, skipping."
 cp "settings.py" "$INSTALL_DIR/" || echo "Warning: settings.py not found, skipping."
