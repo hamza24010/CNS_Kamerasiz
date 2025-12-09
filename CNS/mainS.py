@@ -1053,8 +1053,7 @@ class AdminPanel(QDialog):
         self.chk_camera.setChecked(getattr(settings, 'CAMERA_ENABLED', False))
         layout.addWidget(self.chk_camera)
 
-        self.inp_rtsp = self.create_text_input("RTSP URL:", getattr(settings, 'CAMERA_RTSP_URL', ""))
-        layout.addLayout(self.inp_rtsp[0])
+        # RTSP URL artık settings.IP üzerinden otomatik oluşturuluyor, buradaki input kaldırıldı.
 
         self.toggle_random(self.chk_random.isChecked()) # Init state
 
@@ -1118,9 +1117,9 @@ class AdminPanel(QDialog):
             "fan_right_pin": self.inp_fan_pin[1].value(),
             "resistance_pin": self.inp_rez_pin[1].value(),
             "SLOW_SENSORS": slow_sensors,
-            "CAMERA_ENABLED": self.chk_camera.isChecked(),
-            "CAMERA_RTSP_URL": self.inp_rtsp[1].text()
+            "CAMERA_ENABLED": self.chk_camera.isChecked()
         }
+        # CAMERA_RTSP_URL artık kullanılmıyor, IP settings'den geliyor
         save_settings_to_file(settings_path, new_settings_dict)
         global settings; settings = load_settings_module(settings_path) # Reload immediately
         QMessageBox.information(self, "Bilgi", "Ayarlar güncellendi!")
@@ -1347,7 +1346,14 @@ class Main(QMainWindow):
         # Kamera Kontrolü
         if getattr(settings, 'CAMERA_ENABLED', False):
             print("Kamera Modu Aktif. Kamera açılıyor...")
-            rtsp = getattr(settings, 'CAMERA_RTSP_URL', "")
+            # RTSP URL oluşturma
+            ip_addr = getattr(settings, 'IP', '192.168.1.9')
+            # Eğer ip_addr boşsa varsayılanı kullan
+            if not ip_addr: ip_addr = '192.168.1.9'
+
+            rtsp = f"rtsp://admin:L2F4F47D@{ip_addr}:554/cam/realmonitor?channel=1&subtype=0"
+            print(f"RTSP URL: {rtsp}")
+
             self.camera_window = video.KameraVibe(rtsp, rid)
             # Kamera işlemi bittiğinde simülasyonu başlat
             self.camera_window.process_completed.connect(self.start_simulation_thread)
@@ -1388,6 +1394,7 @@ class Main(QMainWindow):
         # Resistance Max/Min Load
         u.line_Resistance_Max.setText(str(settings.RESISTANCE_MAX))
         u.line_Resistance_Min.setText(str(settings.RESISTANCE_MIN))
+        u.line_KameraIP.setText(str(getattr(settings, 'IP', '192.168.1.9')))
 
         chk_list = [u.sensor_1, u.sensor_2, u.sensor_3, u.sensor_4, u.sensor_5, u.sensor_6, u.sensor_7, u.sensor_8, u.sensor_9, u.sensor_10, u.sensor_11, u.sensor_12, u.sensor_13, u.sensor_14, u.sensor_15]
         set_attr = ["sensor1", "sensor2", "sensor3", "sensor4", "sensor5", "sensor6", "sensor7", "sensor8", "sensor9", "sensor10", "sensor11", "sensor12", "sensor13", "sensor14", "sensor15"]
@@ -1400,7 +1407,8 @@ class Main(QMainWindow):
                     "DESIRED_SUCCESS_COUNT": int(u.line_DSC.text()),
                     "FIRM_NAME": u.line_FIRM.text(),
                     "RESISTANCE_MAX": float(u.line_Resistance_Max.text()),
-                    "RESISTANCE_MIN": float(u.line_Resistance_Min.text())
+                    "RESISTANCE_MIN": float(u.line_Resistance_Min.text()),
+                    "IP": u.line_KameraIP.text()
                 }
                 for chk, attr in zip(chk_list, set_attr): new_set[attr] = chk.isChecked()
                 
