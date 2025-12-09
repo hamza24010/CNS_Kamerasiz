@@ -131,10 +131,10 @@ class ISPM15Simulator:
         # Nihai Gap (Fark): Yavaş fırında 20 C, Hızlıda 12 C (Fark azaltıldı)
         self.target_gap = lerp(20.0, 12.0, self.efficiency)
 
-        # Ortam Gürültüsü (Std Dev): Yavaş=3.0, Hızlı=2.0
-        self.p_noise_amb = lerp(3.0, 2.0, self.efficiency)
-        # Prob Gürültüsü: Yavaş=1.5, Hızlı=0.35
-        self.p_noise_prob = lerp(1.5, 0.35, self.efficiency)
+        # Ortam Gürültüsü (Std Dev): Yavaş=1.5, Hızlı=1.0 (Azaltıldı)
+        self.p_noise_amb = lerp(1.5, 1.0, self.efficiency)
+        # Prob Gürültüsü: Yavaş=0.5, Hızlı=0.2 (Azaltıldı)
+        self.p_noise_prob = lerp(0.5, 0.2, self.efficiency)
 
         print(f"   -> Isınma Hızı: {self.p_heat_rate:.2f} C/dk")
         print(f"   -> İletim Katsayıları (K): {self.p_k_min:.4f} - {self.p_k_max:.4f}")
@@ -248,9 +248,8 @@ class ISPM15Simulator:
                 s["val"] += delta_T
                 
                 # E. Noise
-                noise = random.gauss(0, 0.4) # Standart prob gürültüsü
-                if self.efficiency < 0.3 and random.random() < 0.005: # Çok nadir spike
-                    noise += random.choice([-1.5, 1.5])
+                noise = random.gauss(0, self.p_noise_prob) # Dinamik prob gürültüsü
+                # Spike kaldırıldı (daha stabil)
 
                 final_val = s["val"] + noise
                 output_values[i] = final_val
