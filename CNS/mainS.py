@@ -156,11 +156,20 @@ class ISPM15Simulator:
         if steps_needed < 1: steps_needed = 1
 
         # 13 Sensör Kurulumu
+        # Slow range: [p_k_min, mid]
+        # Fast range: [mid, p_k_max]
+        mid_k = (self.p_k_min + self.p_k_max) / 2.0
+        slow_sensors_list = getattr(settings, 'SLOW_SENSORS', [1, 2, 3, 4])
+        if not isinstance(slow_sensors_list, list): slow_sensors_list = [1, 2, 3, 4]
+
         for i in range(13):
-            # Sensörleri K değerlerine göre dağıt
-            factor = i / 12.0
-            k = self.p_k_min + (factor * (self.p_k_max - self.p_k_min))
-            k += random.uniform(-0.0005, 0.0005)
+            sensor_no = i + 1
+            if sensor_no in slow_sensors_list:
+                # Slow
+                k = random.uniform(self.p_k_min, mid_k)
+            else:
+                # Fast (default)
+                k = random.uniform(mid_k, self.p_k_max)
             
             # Her sensörün kendi buffer'ı var (Ambient geçmişini tutar)
             # Buffer başlangıçta mevcut sıcaklıkla doldurulur
@@ -351,6 +360,7 @@ except Exception as e:
         RESISTANCE_REST_MIN=1
         SIM_IS_RANDOM=True
         SIM_EFFICIENCY=0.5
+        SLOW_SENSORS=[1, 2, 3, 4]
     settings = DummySettings()
 
 
@@ -1027,6 +1037,12 @@ class AdminPanel(QDialog):
         btn_randomize.clicked.connect(self.randomize_value)
         layout.addWidget(btn_randomize)
 
+        # Yavaş Sensörler
+        default_slow = getattr(settings, 'SLOW_SENSORS', [1, 2, 3, 4])
+        default_slow_str = ",".join(map(str, default_slow)) if isinstance(default_slow, list) else "1,2,3,4"
+        self.inp_slow_sensors = self.create_text_input("Yavaş Sensörler (Örn: 1,2,3,4):", default_slow_str)
+        layout.addLayout(self.inp_slow_sensors[0])
+
         self.toggle_random(self.chk_random.isChecked()) # Init state
 
         # Kaydet Butonu
@@ -1055,6 +1071,15 @@ class AdminPanel(QDialog):
         layout.addWidget(inp)
         return layout, inp
 
+    def create_text_input(self, label_text, default_val):
+        layout = QHBoxLayout()
+        lbl = QLabel(label_text)
+        inp = QtWidgets.QLineEdit()
+        inp.setText(str(default_val))
+        layout.addWidget(lbl)
+        layout.addWidget(inp)
+        return layout, inp
+
     def toggle_random(self, checked):
         self.inp_efficiency[1].setEnabled(not checked)
 
@@ -1064,6 +1089,12 @@ class AdminPanel(QDialog):
         
     def save_settings(self):
         # Ayarları güncelle
+        slow_sensors_text = self.inp_slow_sensors[1].text()
+        try:
+            slow_sensors = [int(x.strip()) for x in slow_sensors_text.split(',') if x.strip().isdigit()]
+        except:
+            slow_sensors = [1, 2, 3, 4]
+
         new_settings_dict = {
             "DESIRED_ENGINE_MUNITE": self.inp_fan_work[1].value(),
             "ENGINE_RESTING_MUNITE": self.inp_fan_rest[1].value(),
@@ -1072,7 +1103,8 @@ class AdminPanel(QDialog):
             "SIM_IS_RANDOM": self.chk_random.isChecked(),
             "SIM_EFFICIENCY": self.inp_efficiency[1].value(),
             "fan_right_pin": self.inp_fan_pin[1].value(),
-            "resistance_pin": self.inp_rez_pin[1].value()
+            "resistance_pin": self.inp_rez_pin[1].value(),
+            "SLOW_SENSORS": slow_sensors
         }
         save_settings_to_file(settings_path, new_settings_dict)
         global settings; settings = load_settings_module(settings_path) # Reload immediately
