@@ -121,14 +121,14 @@ class ISPM15Simulator:
         # Parametre İnterpolasyonu
         def lerp(a, b, t): return a + t * (b - a)
         
-        # Isınma Hızı: 0.60 (Yavaş) - 0.80 (Hızlı) C/dakika (Hızlandırıldı, fark azaltıldı)
-        self.p_heat_rate = lerp(0.60, 0.80, self.efficiency)
+        # Isınma Hızı: 0.55 (Yavaş) - 0.85 (Hızlı) C/dakika (Gerçek veriye yakın ama 5 saati geçmeyecek şekilde)
+        self.p_heat_rate = lerp(0.55, 0.85, self.efficiency)
         
         # K Katsayıları (Analizden):
-        # Yavaş Fırın: 0.012 - 0.016 (Makas Daraltıldı)
-        # Hızlı Fırın: 0.020 - 0.024 (Makas Daraltıldı)
+        # Yavaş Fırın: 0.012 - 0.020
+        # Hızlı Fırın: 0.017 - 0.026 (Gerçek veriye yaklaştırıldı)
         self.p_k_min = lerp(0.012, 0.020, self.efficiency)
-        self.p_k_max = lerp(0.016, 0.024, self.efficiency)
+        self.p_k_max = lerp(0.017, 0.026, self.efficiency)
 
         # Dead Time (Termal Atalet): 10 - 12 dakika (Ortalama 11)
         # Hızlı fırınlarda hava sirkülasyonu daha iyi olduğu için ölü zaman biraz daha az olabilir.
