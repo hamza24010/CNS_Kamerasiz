@@ -17,6 +17,7 @@ import random
 import atexit
 import math
 import requests # Hava durumu için
+from collections import deque
 
 # Grafik ve PDF
 import matplotlib.pyplot as plt
@@ -106,166 +107,171 @@ class ISPM15Simulator:
         self.start_temp = get_online_temperature()
         print(f"Simülasyon Başlatıldı. Dış Ortam: {self.start_temp:.2f}°C")
         
-        # RUHSAT RAPORU SENARYOSU (Egemsoon & Parti 1)
-        self.target_shock = 102.0
-        self.target_approach = 85.0
-        self.target_hold = 78.0
+        # --- FİZİK MODELİ 2.0 (Gelişmiş Gerçekçilik) ---
+        # Efficiency (Verim): 0.0 (Yavaş/Gürültülü) <-> 1.0 (Hızlı/Temiz)
+        self.efficiency = random.random()
+        print(f"Fırın Verimlilik Faktörü: {self.efficiency:.2f} (0=Eski, 1=Yeni)")
         
-        self.firin_set_degeri = self.target_shock
+        # Parametre İnterpolasyonu
+        def lerp(a, b, t): return a + t * (b - a)
         
-        # Dinamik Ortam Isınma Hızı (Dış sıcaklığa bağlı)
-        # Yeni Formül (Tuning): Base 1.8, Sensitivity 0.01
-        base_rate = 1.8
-        temp_factor = 1.0 + (self.start_temp - 20.0) * 0.01
-        temp_factor = max(0.5, min(1.5, temp_factor))
+        # Isınma Hızı: 0.55 (Yavaş) - 0.95 (Hızlı) C/dakika (Optimize edildi)
+        self.p_heat_rate = lerp(0.55, 0.95, self.efficiency)
+
+        # K Katsayıları (Analizden - İyileştirilmiş):
+        # Yavaş Fırın: 0.012 - 0.018 (Çok yavaşlar elendi)
+        # Hızlı Fırın: 0.020 - 0.028
+        self.p_k_min = lerp(0.012, 0.020, self.efficiency)
+        self.p_k_max = lerp(0.018, 0.028, self.efficiency)
+
+        # Dead Time (Termal Atalet): 8 - 12 dakika
+        # Bekleme süresini optimize etmek için düşürüldü
+        self.dead_time_mins = lerp(12.0, 8.0, self.efficiency)
+
+        # Nihai Gap (Fark): Yavaş fırında 18 C, Hızlıda 10 C
+        # 56 derece hedefine ulaşamama (sonsuz döngü) riskini önlemek için fark azaltıldı.
+        self.target_gap = lerp(18.0, 10.0, self.efficiency)
         
-        self.hava_isinma_hizi = base_rate * temp_factor
-        print(f"Dinamik Isınma Hızı: {self.hava_isinma_hizi:.2f} (Dış Sıcaklık: {self.start_temp:.1f}°C)")
-        
-        # FİZİKSEL MODELLER (Sensör Profilleri)
-        # Kullanıcı İsteği: Tüm sensörler (13 adet) başta birbirine yakın olsun (+/- 0.5 fark).
-        # Zamanla açılsınlar (Farklı ısınma hızları).
-        
-        self.sensor_states = []
-        
+        # Ortam Gürültüsü (Std Dev): Yavaş=3.0, Hızlı=2.0
+        self.p_noise_amb = lerp(3.0, 2.0, self.efficiency)
+        # Prob Gürültüsü: Yavaş=1.5, Hızlı=0.35
+        self.p_noise_prob = lerp(1.5, 0.35, self.efficiency)
+
+        print(f"   -> Isınma Hızı: {self.p_heat_rate:.2f} C/dk")
+        print(f"   -> İletim Katsayıları (K): {self.p_k_min:.4f} - {self.p_k_max:.4f}")
+        print(f"   -> Termal Atalet (Lag): {self.dead_time_mins:.1f} dk")
+        print(f"   -> Hedef Maksimum Fark: {self.target_gap:.1f} C")
+        print(f"   -> Gürültü Seviyesi: Ortam~{self.p_noise_amb:.1f}, Prob~{self.p_noise_prob:.1f}")
+
+        self.sensors = []
+
+        # Dead Time (Lag) için Buffer Boyutu Hesapla
+        # Her adım settings.DESIRED_SECONDS sürer.
+        steps_needed = int((self.dead_time_mins * 60) / settings.DESIRED_SECONDS)
+        if steps_needed < 1: steps_needed = 1
+
+        # 13 Sensör Kurulumu
+        for i in range(13):
+            # Sensörleri K değerlerine göre dağıt
+            factor = i / 12.0
+            k = self.p_k_min + (factor * (self.p_k_max - self.p_k_min))
+            k += random.uniform(-0.0005, 0.0005)
+            
+            # Her sensörün kendi buffer'ı var (Ambient geçmişini tutar)
+            # Buffer başlangıçta mevcut sıcaklıkla doldurulur
+            buf = deque([self.start_temp] * steps_needed, maxlen=steps_needed)
+
+            self.sensors.append({
+                "val": self.start_temp + random.uniform(-0.5, 0.5),
+                "k": k,
+                "buffer": buf
+            })
+
         # Ortam Sensörleri (AT1, AT2)
         self.at_states = [
-            {"val": self.start_temp + random.uniform(-0.2, 0.2)}, # AT1
-            {"val": self.start_temp + random.uniform(-0.2, 0.2)}  # AT2
+            {"val": self.start_temp},
+            {"val": self.start_temp}
         ]
-        
-        # Takoz Sensörleri (13 Adet)
-        for i in range(13):
-            # Başlangıç Değeri: Hepsi ortama çok yakın başlar
-            start_val = self.start_temp + random.uniform(-0.5, 0.5)
-            
-            # Isınma Hızı (İletim Katsayısı)
-            # Yavaş Grup: 1, 9, 11, 13 (Index: 0, 8, 10, 12)
-            # Diğerleri: Hızlı Grup
-            if i in [0, 8, 10, 12]:
-                # Yavaşlar (Sırasıyla biraz artar)
-                iletim = 0.0065 + (i * 0.0005) 
-            else:
-                # Hızlılar (Daha hızlı artar, makas açılır)
-                iletim = 0.0100 + (i * 0.0020)
-                
-            self.sensor_states.append({
-                "val": start_val,
-                "iletim": iletim
-            })
         
         self.rezistans_aktif = True
         self.sogutma_modu = False
-        self.sterilizasyon_basladi = False
-        self.phase = "SHOCK" 
         self.virtual_heater_on = True 
 
     def calculate_step(self, active_sensors_mask, desired_temp):
-        # 1. AKTİF SENSÖRLERİ TESPİT ET
-        # active_sensors_mask: 15 elemanlı (13 prob + 2 ortam)
-        output_values = [0.0] * 15
-        current_takoz_vals = []
-        
-        # 2. SENSÖR HESAPLAMALARI
-        for i in range(13):
-            if active_sensors_mask[i]:
-                # Mevcut değer
-                val = self.sensor_states[i]["val"]
-                
-                # Çözünürlük ve Dalgalanma (Noise)
-                noise = random.uniform(-0.03, 0.03)
-                val_with_noise = val + noise
-                
-                output_values[i] = val_with_noise
-                
-                # Sadece Yavaş Grubun (1, 9, 11, 13) değerlerini kontrol döngüsüne al
-                # Çünkü süreci en yavaşlar belirler.
-                if i in [0, 8, 10, 12]:
-                    current_takoz_vals.append(val_with_noise)
+        dt_minutes = settings.DESIRED_SECONDS / 60.0
 
-        # Ortam Değerleri
-        at1_val = self.at_states[0]["val"]
-        at2_val = self.at_states[1]["val"]
-        
-        # Ortam Noise
-        at1_out = at1_val + random.uniform(-0.05, 0.05)
-        at2_out = at2_val + random.uniform(-0.05, 0.05)
-        
-        if active_sensors_mask[13]: output_values[13] = at1_out
-        if active_sensors_mask[14]: output_values[14] = at2_out
+        # 1. Sanal Termostat
+        avg_ortam = (self.at_states[0]["val"] + self.at_states[1]["val"]) / 2.0
 
-        # 3. KONTROL VE FAZ MANTIĞI (Sanal Termostat)
-        avg_ortam = (at1_val + at2_val) / 2.0
-        
         if avg_ortam >= settings.RESISTANCE_MAX:
             self.virtual_heater_on = False
         elif avg_ortam <= settings.RESISTANCE_MIN:
             self.virtual_heater_on = True
-            
-        effective_heating = self.rezistans_aktif and self.virtual_heater_on
 
-        # Sayaç Sinyali
-        if not current_takoz_vals:
-             min_takoz = avg_ortam
+        effective_heating = self.rezistans_aktif and self.virtual_heater_on and not self.sogutma_modu
+
+        # 2. Ortam Fiziği
+        # Ortam sıcaklığı hızlı artar ama bir doygunluğa ulaşır (Örn: 100-110 C)
+        # Isıtma hızı ortam sıcaklığı arttıkça yavaşlar (Newtonian cooling benzeri kayıp)
+        target_ambient_max = 105.0 # Fırının maksimum çıkabileceği kapasite
+
+        if effective_heating:
+            # Isınma hızı, hedefe yaklaştıkça azalır
+            gap = target_ambient_max - avg_ortam
+            if gap < 0: gap = 0
+            dynamic_rate = self.p_heat_rate * (gap / 50.0) # Basit bir scaling
+            if dynamic_rate > self.p_heat_rate: dynamic_rate = self.p_heat_rate
+            if dynamic_rate < 0.1: dynamic_rate = 0.1 # Minimum ısınma
+
+            base_change = dynamic_rate * dt_minutes
         else:
-             min_takoz = min(current_takoz_vals)
-             
-        target_hit = (min_takoz >= desired_temp)
+            # Soğuma hızı (İzolasyona bağlı)
+            cooling_rate = 0.5 + (1.0 - self.efficiency) * 0.5 # Eski fırın daha hızlı soğur
+            base_change = -cooling_rate * dt_minutes
 
-        # 4. ORTAM FİZİĞİ
-        noise_at = random.uniform(-1.2, 1.2)
-        
-        if not self.sogutma_modu:
-            if effective_heating:
-                delta = self.hava_isinma_hizi + noise_at
-                self.at_states[0]["val"] += max(0.2, delta)
-                self.at_states[1]["val"] += max(0.2, delta + random.uniform(-0.5, 0.5))
-            else:
-                drop_rate = 0.8 
-                self.at_states[0]["val"] -= drop_rate + abs(noise_at * 0.2)
-                self.at_states[1]["val"] -= drop_rate + abs(noise_at * 0.2)
-        else:
-            self.at_states[0]["val"] -= 2.2 + noise_at
-            self.at_states[1]["val"] -= 2.2 + noise_at
+        for i in range(2):
+            self.at_states[i]["val"] += base_change + random.gauss(0, 0.3)
+            # Sensörler arası fark
+            if i == 1: self.at_states[i]["val"] += random.uniform(-0.1, 0.1) * dt_minutes
 
-        # 5. TAKOZ FİZİĞİ (Isı Transferi)
-        ort_ortam = (self.at_states[0]["val"] + self.at_states[1]["val"]) / 2
+        avg_ortam_curr = (self.at_states[0]["val"] + self.at_states[1]["val"]) / 2.0
+
+        # 3. Sensör Fiziği (Lag + Newton + Asymptotic Limit)
+        output_values = [0.0] * 15
+        current_takoz_vals = []
         
         for i in range(13):
-            # Her sensör kendi state'ini günceller
-            state = self.sensor_states[i]
-            noise_t = random.uniform(-0.02, 0.02)
-            fark = ort_ortam - state["val"]
-            
-            if fark > 0:
-                # Isınma
-                base_iletim = state["iletim"]
-                dynamic_iletim = base_iletim * (1.0 + (fark / 100.0))
-                
-                # Kalıcı Isı Farkı (Strict Thermal Gap) - Kullanıcı İsteği
-                if fark < 9.0:
-                    # 9 Derece altına inince ISINMA DURUR. Sadece dalgalanma olur.
-                    # Bu sayede 9 derece fark korunur.
-                    artis = random.uniform(-0.05, 0.05)
-                    state["val"] += artis
-                elif fark < 12.0:
-                    # 12 Derece altına inince çok yavaşlar (%75 azalır)
-                    dynamic_iletim *= 0.25 
-                    artis = (fark * dynamic_iletim) + noise_t
-                    # Zorunlu minimum artışı kaldırıyoruz (max(0.008, ...) YOK)
-                    state["val"] += max(0.002, artis) # Çok küçük bir min değer
+            if active_sensors_mask[i]:
+                s = self.sensors[i]
+
+                # A. Buffer'a yeni ortam sıcaklığını ekle
+                s["buffer"].append(avg_ortam_curr)
+
+                # B. Sensörün "Gördüğü" Ortam Sıcaklığı (Geçmişten gelen)
+                # Buffer'ın başındaki (en eski) değeri alıyoruz
+                delayed_ambient = s["buffer"][0]
+
+                # C. Fiziksel Limit (Gap Control)
+                # Sensör asla ortam sıcaklığına tam ulaşamaz, arada bir "Gap" kalır.
+                # Bu gap, sıcaklık arttıkça belirginleşir. Düşük sıcaklıkta gap çok az olmalı.
+                # Aksi takdirde başlangıçta sensör soğumaya çalışır (Bug Fix)
+                dynamic_gap = self.target_gap * (delayed_ambient / 100.0)
+                if dynamic_gap > self.target_gap: dynamic_gap = self.target_gap
+
+                effective_target = delayed_ambient - dynamic_gap
+
+                # D. Newton Yasası
+                diff = effective_target - s["val"]
+
+                if diff > 0:
+                    delta_T = s["k"] * diff * dt_minutes
+                    # Isınırken K bazen dinamik artabilir ama sabit tutuyoruz
                 else:
-                    # Normal Isınma
-                    artis = (fark * dynamic_iletim) + noise_t
-                    state["val"] += max(0.008, artis)
+                    # Soğurken (Ambient düştüyse veya overshoot varsa)
+                    delta_T = s["k"] * diff * dt_minutes * 0.5 # Soğuma daha yavaş olabilir (Ahşap kütlesi)
                 
-            elif fark < -0.5: 
-                # Overshoot engelleme
-                state["val"] -= 0.05 
+                s["val"] += delta_T
                 
-            elif self.sogutma_modu:
-                # Soğuma
-                state["val"] += (fark * state["iletim"] * 0.5)
+                # E. Noise
+                noise = random.gauss(0, 0.4) # Standart prob gürültüsü
+                if self.efficiency < 0.3 and random.random() < 0.005: # Çok nadir spike
+                    noise += random.choice([-1.5, 1.5])
+
+                final_val = s["val"] + noise
+                output_values[i] = final_val
+                current_takoz_vals.append(final_val)
+
+        # Ortam Sensörleri Çıktısı (Noise eklenmiş hali)
+        if active_sensors_mask[13]: output_values[13] = self.at_states[0]["val"] + random.gauss(0, self.p_noise_amb * 0.5)
+        if active_sensors_mask[14]: output_values[14] = self.at_states[1]["val"] + random.gauss(0, self.p_noise_amb * 0.5)
+
+        # 4. Hedef Kontrolü
+        if not current_takoz_vals:
+             min_takoz = avg_ortam_curr
+        else:
+             min_takoz = min(current_takoz_vals)
+
+        target_hit = (min_takoz >= desired_temp)
 
         return output_values, target_hit
 
