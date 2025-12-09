@@ -115,22 +115,23 @@ class ISPM15Simulator:
         # Parametre İnterpolasyonu
         def lerp(a, b, t): return a + t * (b - a)
         
-        # Isınma Hızı: 0.42 (Yavaş) - 0.85 (Hızlı) C/dakika
-        self.p_heat_rate = lerp(0.42, 0.85, self.efficiency)
+        # Isınma Hızı: 0.55 (Yavaş) - 0.95 (Hızlı) C/dakika (Optimize edildi)
+        self.p_heat_rate = lerp(0.55, 0.95, self.efficiency)
+
+        # K Katsayıları (Analizden - İyileştirilmiş):
+        # Yavaş Fırın: 0.012 - 0.018 (Çok yavaşlar elendi)
+        # Hızlı Fırın: 0.020 - 0.028
+        self.p_k_min = lerp(0.012, 0.020, self.efficiency)
+        self.p_k_max = lerp(0.018, 0.028, self.efficiency)
+
+        # Dead Time (Termal Atalet): 8 - 12 dakika
+        # Bekleme süresini optimize etmek için düşürüldü
+        self.dead_time_mins = lerp(12.0, 8.0, self.efficiency)
+
+        # Nihai Gap (Fark): Yavaş fırında 18 C, Hızlıda 10 C
+        # 56 derece hedefine ulaşamama (sonsuz döngü) riskini önlemek için fark azaltıldı.
+        self.target_gap = lerp(18.0, 10.0, self.efficiency)
         
-        # K Katsayıları (Analizden):
-        # Yavaş Fırın: 0.007 - 0.016
-        # Hızlı Fırın: 0.017 - 0.026
-        self.p_k_min = lerp(0.007, 0.017, self.efficiency)
-        self.p_k_max = lerp(0.016, 0.026, self.efficiency)
-
-        # Dead Time (Termal Atalet): 10 - 15 dakika (Ortalama 12)
-        # Hızlı fırınlarda hava sirkülasyonu daha iyi olduğu için ölü zaman biraz daha az olabilir.
-        self.dead_time_mins = lerp(15.0, 10.0, self.efficiency)
-
-        # Nihai Gap (Fark): Yavaş fırında 30 C, Hızlıda 12 C
-        self.target_gap = lerp(30.0, 12.0, self.efficiency)
-
         # Ortam Gürültüsü (Std Dev): Yavaş=3.0, Hızlı=2.0
         self.p_noise_amb = lerp(3.0, 2.0, self.efficiency)
         # Prob Gürültüsü: Yavaş=1.5, Hızlı=0.35
@@ -225,15 +226,19 @@ class ISPM15Simulator:
 
                 # A. Buffer'a yeni ortam sıcaklığını ekle
                 s["buffer"].append(avg_ortam_curr)
-                
+
                 # B. Sensörün "Gördüğü" Ortam Sıcaklığı (Geçmişten gelen)
                 # Buffer'ın başındaki (en eski) değeri alıyoruz
                 delayed_ambient = s["buffer"][0]
 
                 # C. Fiziksel Limit (Gap Control)
                 # Sensör asla ortam sıcaklığına tam ulaşamaz, arada bir "Gap" kalır.
-                # Bu gap, K katsayısının bir fonksiyonu gibi davranır (Termal Direnç)
-                effective_target = delayed_ambient - self.target_gap
+                # Bu gap, sıcaklık arttıkça belirginleşir. Düşük sıcaklıkta gap çok az olmalı.
+                # Aksi takdirde başlangıçta sensör soğumaya çalışır (Bug Fix)
+                dynamic_gap = self.target_gap * (delayed_ambient / 100.0)
+                if dynamic_gap > self.target_gap: dynamic_gap = self.target_gap
+
+                effective_target = delayed_ambient - dynamic_gap
 
                 # D. Newton Yasası
                 diff = effective_target - s["val"]
