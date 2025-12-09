@@ -115,21 +115,21 @@ class ISPM15Simulator:
         # Parametre İnterpolasyonu
         def lerp(a, b, t): return a + t * (b - a)
         
-        # Isınma Hızı: 0.42 (Yavaş) - 0.85 (Hızlı) C/dakika
-        self.p_heat_rate = lerp(0.42, 0.85, self.efficiency)
+        # Isınma Hızı: 0.60 (Yavaş) - 0.80 (Hızlı) C/dakika (Hızlandırıldı, fark azaltıldı)
+        self.p_heat_rate = lerp(0.60, 0.80, self.efficiency)
         
         # K Katsayıları (Analizden):
-        # Yavaş Fırın: 0.007 - 0.016
-        # Hızlı Fırın: 0.017 - 0.026
-        self.p_k_min = lerp(0.007, 0.017, self.efficiency)
-        self.p_k_max = lerp(0.016, 0.026, self.efficiency)
+        # Yavaş Fırın: 0.012 - 0.020
+        # Hızlı Fırın: 0.020 - 0.028
+        self.p_k_min = lerp(0.012, 0.020, self.efficiency)
+        self.p_k_max = lerp(0.020, 0.028, self.efficiency)
 
-        # Dead Time (Termal Atalet): 10 - 15 dakika (Ortalama 12)
+        # Dead Time (Termal Atalet): 10 - 12 dakika (Ortalama 11)
         # Hızlı fırınlarda hava sirkülasyonu daha iyi olduğu için ölü zaman biraz daha az olabilir.
-        self.dead_time_mins = lerp(15.0, 10.0, self.efficiency)
+        self.dead_time_mins = lerp(12.0, 10.0, self.efficiency)
 
-        # Nihai Gap (Fark): Yavaş fırında 30 C, Hızlıda 12 C
-        self.target_gap = lerp(30.0, 12.0, self.efficiency)
+        # Nihai Gap (Fark): Yavaş fırında 20 C, Hızlıda 12 C (Fark azaltıldı)
+        self.target_gap = lerp(20.0, 12.0, self.efficiency)
 
         # Ortam Gürültüsü (Std Dev): Yavaş=3.0, Hızlı=2.0
         self.p_noise_amb = lerp(3.0, 2.0, self.efficiency)
