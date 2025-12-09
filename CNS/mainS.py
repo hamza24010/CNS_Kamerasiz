@@ -18,6 +18,7 @@ import atexit
 import math
 import requests # Hava durumu için
 from collections import deque
+import video # Kamera Entegrasyonu
 
 # Grafik ve PDF
 import matplotlib.pyplot as plt
@@ -361,6 +362,8 @@ except Exception as e:
         SIM_IS_RANDOM=True
         SIM_EFFICIENCY=0.5
         SLOW_SENSORS=[1, 2, 3, 4]
+        CAMERA_ENABLED=False
+        CAMERA_RTSP_URL="rtsp://admin:L2F4F47D@192.168.1.9:554/cam/realmonitor?channel=1&subtype=0"
     settings = DummySettings()
 
 
@@ -1043,6 +1046,16 @@ class AdminPanel(QDialog):
         self.inp_slow_sensors = self.create_text_input("Yavaş Sensörler (Örn: 1,2,3,4):", default_slow_str)
         layout.addLayout(self.inp_slow_sensors[0])
 
+        # Kamera Ayarları
+        layout.addWidget(QLabel("")) # Boşluk
+        layout.addWidget(QLabel("--- KAMERA AYARLARI ---"))
+        self.chk_camera = QCheckBox("Kamera Aktif")
+        self.chk_camera.setChecked(getattr(settings, 'CAMERA_ENABLED', False))
+        layout.addWidget(self.chk_camera)
+
+        self.inp_rtsp = self.create_text_input("RTSP URL:", getattr(settings, 'CAMERA_RTSP_URL', ""))
+        layout.addLayout(self.inp_rtsp[0])
+
         self.toggle_random(self.chk_random.isChecked()) # Init state
 
         # Kaydet Butonu
@@ -1104,7 +1117,9 @@ class AdminPanel(QDialog):
             "SIM_EFFICIENCY": self.inp_efficiency[1].value(),
             "fan_right_pin": self.inp_fan_pin[1].value(),
             "resistance_pin": self.inp_rez_pin[1].value(),
-            "SLOW_SENSORS": slow_sensors
+            "SLOW_SENSORS": slow_sensors,
+            "CAMERA_ENABLED": self.chk_camera.isChecked(),
+            "CAMERA_RTSP_URL": self.inp_rtsp[1].text()
         }
         save_settings_to_file(settings_path, new_settings_dict)
         global settings; settings = load_settings_module(settings_path) # Reload immediately
@@ -1321,14 +1336,34 @@ class Main(QMainWindow):
         elif txt == "Devam": self.thread.pause_event.clear(); self.ui.btn_Start.setText("Duraklat")
         else: self.start_dialog()
     def start_dialog(self): self.dia = QDialog(); u = Ui_Start_Dialog(); u.setupUi(self.dia); u.btn_Start_P.clicked.connect(lambda: self.begin_process(u)); self.dia.exec_()
+
     def begin_process(self, u):
         now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         rid = int(report_index()) + 1
         insert_report(rid, "1", now, "IP", u.txt_type.text(), u.txt_amount.text(), u.txt_pieces.text(), u.txtArea_info.toPlainText())
         self.ui.txt_time.setText(now)
         self.ui.tableWidget.setRowCount(0) # Eski verileri temizle
+
+        # Kamera Kontrolü
+        if getattr(settings, 'CAMERA_ENABLED', False):
+            print("Kamera Modu Aktif. Kamera açılıyor...")
+            rtsp = getattr(settings, 'CAMERA_RTSP_URL', "")
+            self.camera_window = video.KameraVibe(rtsp, rid)
+            # Kamera işlemi bittiğinde simülasyonu başlat
+            self.camera_window.process_completed.connect(self.start_simulation_thread)
+            self.camera_window.show()
+            self.dia.close()
+        else:
+            self.start_simulation_thread()
+            self.dia.close()
+
+    def start_simulation_thread(self, *args):
         self.thread = DataUpdateThread(); self.thread.data_updated.connect(self.on_data); self.thread.finished.connect(self.on_finished); self.thread.start()
-        self.ui.btn_Start.setText("Duraklat"); self.dia.close()
+        self.ui.btn_Start.setText("Duraklat")
+        # Eğer kamera varsa kapat (zaten kapanmış olabilir ama garanti olsun)
+        if hasattr(self, 'camera_window'):
+            self.camera_window.close()
+
     def on_data(self, t_str, *args):
         vals = args[:15]; cnt = args[15]; row = self.ui.tableWidget.rowCount(); self.ui.tableWidget.insertRow(row)
         db_vals = []
