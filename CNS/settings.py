@@ -22,8 +22,8 @@ DESIRED_TEMP = 57.0
 
 FIRM_NAME = 'Firma İsmi'
 OVEN_NO = 0 
-RESISTANCE_MAX = 80.0
-RESISTANCE_MIN = 70.0
+RESISTANCE_MAX = 95.0
+RESISTANCE_MIN = 85.0
 VALITADITON = True 
 DESIRED_SUCCESS_COUNT = 30
 
@@ -114,15 +114,15 @@ sensor1 = True
 sensor2 = True
 sensor3 = True
 sensor4 = True
-sensor5 = False
-sensor6 = False
-sensor7 = False
-sensor8 = False
-sensor9 = False
-sensor10 = False
-sensor11 = False
-sensor12 = False
-sensor13 = False
+sensor5 = True
+sensor6 = True
+sensor7 = True
+sensor8 = True
+sensor9 = True
+sensor10 = True
+sensor11 = True
+sensor12 = True
+sensor13 = True
 sensor14 = True
 sensor15 = True
 
