@@ -992,7 +992,9 @@ class AdminPanel(QDialog):
         layout = QVBoxLayout(self)
         
         # Fan Ayarları
-        layout.addWidget(QLabel("--- FAN KONTROLÜ (Pin 20) ---"))
+        layout.addWidget(QLabel(f"--- FAN KONTROLÜ (Pin {settings.fan_right_pin}) ---"))
+        self.inp_fan_pin = self.create_input("Fan Pini (BCM):", settings.fan_right_pin)
+        layout.addLayout(self.inp_fan_pin[0])
         self.inp_fan_work = self.create_input("Çalışma Süresi (Dk):", settings.DESIRED_ENGINE_MUNITE)
         layout.addLayout(self.inp_fan_work[0])
         self.inp_fan_rest = self.create_input("Bekleme Süresi (Dk):", settings.ENGINE_RESTING_MUNITE)
@@ -1001,7 +1003,9 @@ class AdminPanel(QDialog):
         layout.addWidget(QLabel("")) # Boşluk
         
         # Rezistans Ayarları
-        layout.addWidget(QLabel("--- REZİSTANS KONTROLÜ (Pin 16) ---"))
+        layout.addWidget(QLabel(f"--- REZİSTANS KONTROLÜ (Pin {settings.resistance_pin}) ---"))
+        self.inp_rez_pin = self.create_input("Rezistans Pini (BCM):", settings.resistance_pin)
+        layout.addLayout(self.inp_rez_pin[0])
         self.inp_rez_work = self.create_input("Çalışma Süresi (Dk):", getattr(settings, 'RESISTANCE_WORK_MIN', 1))
         layout.addLayout(self.inp_rez_work[0])
         self.inp_rez_rest = self.create_input("Bekleme Süresi (Dk):", getattr(settings, 'RESISTANCE_REST_MIN', 1))
@@ -1066,7 +1070,9 @@ class AdminPanel(QDialog):
             "RESISTANCE_WORK_MIN": self.inp_rez_work[1].value(),
             "RESISTANCE_REST_MIN": self.inp_rez_rest[1].value(),
             "SIM_IS_RANDOM": self.chk_random.isChecked(),
-            "SIM_EFFICIENCY": self.inp_efficiency[1].value()
+            "SIM_EFFICIENCY": self.inp_efficiency[1].value(),
+            "fan_right_pin": self.inp_fan_pin[1].value(),
+            "resistance_pin": self.inp_rez_pin[1].value()
         }
         save_settings_to_file(settings_path, new_settings_dict)
         global settings; settings = load_settings_module(settings_path) # Reload immediately
