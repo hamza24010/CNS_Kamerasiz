@@ -1294,6 +1294,7 @@ class Main(QMainWindow):
         rid = int(report_index()) + 1
         insert_report(rid, "1", now, "IP", u.txt_type.text(), u.txt_amount.text(), u.txt_pieces.text(), u.txtArea_info.toPlainText())
         self.ui.txt_time.setText(now)
+        self.ui.tableWidget.setRowCount(0) # Eski verileri temizle
         self.thread = DataUpdateThread(); self.thread.data_updated.connect(self.on_data); self.thread.finished.connect(self.on_finished); self.thread.start()
         self.ui.btn_Start.setText("Duraklat"); self.dia.close()
     def on_data(self, t_str, *args):
