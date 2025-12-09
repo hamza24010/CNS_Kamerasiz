@@ -30,7 +30,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 
 # PyQt5
 from PyQt5 import QtCore, QtWidgets, QtGui
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QVBoxLayout, QPushButton, QMessageBox, QTableWidgetItem, QLabel, QSpinBox, QHBoxLayout
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QVBoxLayout, QPushButton, QMessageBox, QTableWidgetItem, QLabel, QSpinBox, QHBoxLayout, QCheckBox, QDoubleSpinBox
 from PyQt5.QtGui import QBrush, QColor, QGuiApplication
 
 # UI Dosyaları
@@ -109,8 +109,14 @@ class ISPM15Simulator:
         
         # --- FİZİK MODELİ 2.0 (Gelişmiş Gerçekçilik) ---
         # Efficiency (Verim): 0.0 (Yavaş/Gürültülü) <-> 1.0 (Hızlı/Temiz)
-        self.efficiency = random.random()
-        print(f"Fırın Verimlilik Faktörü: {self.efficiency:.2f} (0=Eski, 1=Yeni)")
+        if getattr(settings, 'SIM_IS_RANDOM', True):
+            self.efficiency = random.random()
+            print(f"Fırın Verimlilik Faktörü (Random): {self.efficiency:.2f} (0=Eski, 1=Yeni)")
+        else:
+            self.efficiency = getattr(settings, 'SIM_EFFICIENCY', 0.5)
+            # Clip between 0.0 and 1.0 just in case
+            self.efficiency = max(0.0, min(1.0, self.efficiency))
+            print(f"Fırın Verimlilik Faktörü (Manual): {self.efficiency:.2f} (0=Eski, 1=Yeni)")
         
         # Parametre İnterpolasyonu
         def lerp(a, b, t): return a + t * (b - a)
@@ -119,10 +125,10 @@ class ISPM15Simulator:
         self.p_heat_rate = lerp(0.60, 0.80, self.efficiency)
         
         # K Katsayıları (Analizden):
-        # Yavaş Fırın: 0.012 - 0.020
-        # Hızlı Fırın: 0.020 - 0.028
+        # Yavaş Fırın: 0.012 - 0.016 (Makas Daraltıldı)
+        # Hızlı Fırın: 0.020 - 0.024 (Makas Daraltıldı)
         self.p_k_min = lerp(0.012, 0.020, self.efficiency)
-        self.p_k_max = lerp(0.020, 0.028, self.efficiency)
+        self.p_k_max = lerp(0.016, 0.024, self.efficiency)
 
         # Dead Time (Termal Atalet): 10 - 12 dakika (Ortalama 11)
         # Hızlı fırınlarda hava sirkülasyonu daha iyi olduğu için ölü zaman biraz daha az olabilir.
@@ -294,6 +300,8 @@ def save_settings_to_file(path, new_values):
     with open(path, 'r', encoding='utf-8') as f:
         lines = f.readlines()
     
+    keys_found = set()
+
     with open(path, 'w', encoding='utf-8') as f:
         for line in lines:
             updated = False
@@ -304,9 +312,16 @@ def save_settings_to_file(path, new_values):
                     val_str = "True" if isinstance(val, bool) and val else "False" if isinstance(val, bool) else f"'{val}'" if isinstance(val, str) else str(val)
                     f.write(f"{key} = {val_str}\n")
                     updated = True
+                    keys_found.add(key)
                     break
             if not updated:
                 f.write(line)
+
+        # Append missing keys
+        for key, val in new_values.items():
+            if key not in keys_found:
+                val_str = "True" if isinstance(val, bool) and val else "False" if isinstance(val, bool) else f"'{val}'" if isinstance(val, str) else str(val)
+                f.write(f"\n{key} = {val_str}\n")
 
 # Initial loading of settings
 if not os.path.exists(settings_path):
@@ -334,6 +349,8 @@ except Exception as e:
         # Add new settings with default values for DummySettings
         RESISTANCE_WORK_MIN=1
         RESISTANCE_REST_MIN=1
+        SIM_IS_RANDOM=True
+        SIM_EFFICIENCY=0.5
     settings = DummySettings()
 
 
@@ -990,6 +1007,24 @@ class AdminPanel(QDialog):
         self.inp_rez_rest = self.create_input("Bekleme Süresi (Dk):", getattr(settings, 'RESISTANCE_REST_MIN', 1))
         layout.addLayout(self.inp_rez_rest[0])
         
+        # Simülasyon Ayarları
+        layout.addWidget(QLabel("")) # Boşluk
+        layout.addWidget(QLabel("--- SİMÜLASYON AYARLARI ---"))
+
+        self.chk_random = QCheckBox("Rastgele Fırın Özellikleri")
+        self.chk_random.setChecked(getattr(settings, 'SIM_IS_RANDOM', True))
+        self.chk_random.toggled.connect(self.toggle_random)
+        layout.addWidget(self.chk_random)
+
+        self.inp_efficiency = self.create_double_input("Verimlilik (0.0 - 1.0):", getattr(settings, 'SIM_EFFICIENCY', 0.5))
+        layout.addLayout(self.inp_efficiency[0])
+
+        btn_randomize = QPushButton("Rastgele Değer Ata")
+        btn_randomize.clicked.connect(self.randomize_value)
+        layout.addWidget(btn_randomize)
+
+        self.toggle_random(self.chk_random.isChecked()) # Init state
+
         # Kaydet Butonu
         btn_save = QPushButton("Kaydet")
         btn_save.clicked.connect(self.save_settings)
@@ -1004,6 +1039,24 @@ class AdminPanel(QDialog):
         layout.addWidget(lbl)
         layout.addWidget(inp)
         return layout, inp
+
+    def create_double_input(self, label_text, default_val):
+        layout = QHBoxLayout()
+        lbl = QLabel(label_text)
+        inp = QDoubleSpinBox()
+        inp.setRange(0.0, 1.0)
+        inp.setSingleStep(0.01)
+        inp.setValue(float(default_val))
+        layout.addWidget(lbl)
+        layout.addWidget(inp)
+        return layout, inp
+
+    def toggle_random(self, checked):
+        self.inp_efficiency[1].setEnabled(not checked)
+
+    def randomize_value(self):
+        val = random.random()
+        self.inp_efficiency[1].setValue(val)
         
     def save_settings(self):
         # Ayarları güncelle
@@ -1011,7 +1064,9 @@ class AdminPanel(QDialog):
             "DESIRED_ENGINE_MUNITE": self.inp_fan_work[1].value(),
             "ENGINE_RESTING_MUNITE": self.inp_fan_rest[1].value(),
             "RESISTANCE_WORK_MIN": self.inp_rez_work[1].value(),
-            "RESISTANCE_REST_MIN": self.inp_rez_rest[1].value()
+            "RESISTANCE_REST_MIN": self.inp_rez_rest[1].value(),
+            "SIM_IS_RANDOM": self.chk_random.isChecked(),
+            "SIM_EFFICIENCY": self.inp_efficiency[1].value()
         }
         save_settings_to_file(settings_path, new_settings_dict)
         global settings; settings = load_settings_module(settings_path) # Reload immediately
