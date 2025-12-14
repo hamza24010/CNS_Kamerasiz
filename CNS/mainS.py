@@ -111,7 +111,8 @@ class ISPM15Simulator:
         # --- FİZİK MODELİ 2.0 (Gelişmiş Gerçekçilik) ---
         # Efficiency (Verim): 0.0 (Yavaş/Gürültülü) <-> 1.0 (Hızlı/Temiz)
         if getattr(settings, 'SIM_IS_RANDOM', True):
-            self.efficiency = random.random()
+            # Efficiency 0.2 altına inmesin, yoksa ısı kaybı ısıtmadan fazla olabiliyor
+            self.efficiency = random.uniform(0.2, 1.0)
             print(f"Fırın Verimlilik Faktörü (Random): {self.efficiency:.2f} (0=Eski, 1=Yeni)")
         else:
             self.efficiency = getattr(settings, 'SIM_EFFICIENCY', 0.5)
@@ -122,21 +123,22 @@ class ISPM15Simulator:
         # Parametre İnterpolasyonu
         def lerp(a, b, t): return a + t * (b - a)
         
-        # Isınma Hızı: 0.55 (Yavaş) - 0.85 (Hızlı) C/dakika (Gerçek veriye yakın ama 5 saati geçmeyecek şekilde)
-        self.p_heat_rate = lerp(0.55, 0.85, self.efficiency)
+        # Isınma Hızı: 0.80 (Yavaş) - 1.20 (Hızlı) C/dakika (Hızlandırıldı)
+        self.p_heat_rate = lerp(0.80, 1.20, self.efficiency)
         
         # K Katsayıları (Analizden):
-        # Yavaş Fırın: 0.012 - 0.020
-        # Hızlı Fırın: 0.017 - 0.026 (Gerçek veriye yaklaştırıldı)
-        self.p_k_min = lerp(0.012, 0.020, self.efficiency)
-        self.p_k_max = lerp(0.017, 0.026, self.efficiency)
+        # Yavaş Fırın: 0.018 - 0.025 (Artırıldı)
+        # Hızlı Fırın: 0.022 - 0.032 (Artırıldı)
+        self.p_k_min = lerp(0.018, 0.025, self.efficiency)
+        self.p_k_max = lerp(0.022, 0.032, self.efficiency)
 
         # Dead Time (Termal Atalet): 10 - 12 dakika (Ortalama 11)
         # Hızlı fırınlarda hava sirkülasyonu daha iyi olduğu için ölü zaman biraz daha az olabilir.
         self.dead_time_mins = lerp(12.0, 10.0, self.efficiency)
 
-        # Nihai Gap (Fark): Yavaş fırında 20 C, Hızlıda 12 C (Fark azaltıldı)
-        self.target_gap = lerp(20.0, 12.0, self.efficiency)
+        # Nihai Gap (Fark): Yavaş fırında 8 C, Hızlıda 3 C (Ciddi oranda düşürüldü)
+        # Bu sayede ortam 65-70 dereceyken bile 56 dereceye ulaşılabilir.
+        self.target_gap = lerp(8.0, 3.0, self.efficiency)
 
         # Ortam Gürültüsü (Std Dev): Yavaş=1.5, Hızlı=1.0 (Azaltıldı)
         self.p_noise_amb = lerp(1.5, 1.0, self.efficiency)
@@ -221,7 +223,9 @@ class ISPM15Simulator:
             base_change = dynamic_rate * dt_minutes
         else:
             # Soğuma hızı (İzolasyona bağlı)
-            cooling_rate = 0.5 + (1.0 - self.efficiency) * 0.5 # Eski fırın daha hızlı soğur
+            # Düzeltme: Soğuma hızı ısıtma hızından (0.8) düşük olmalı ki 50% duty cycle'da ısınabilsin.
+            # Max soğuma (eff=0): 0.3 + 0.3 = 0.6 C/dk. Isıtma (0.8) > Soğuma (0.6)
+            cooling_rate = 0.3 + (1.0 - self.efficiency) * 0.3
             base_change = -cooling_rate * dt_minutes
 
         for i in range(2):
@@ -1304,6 +1308,15 @@ class Main(QMainWindow):
         self.key_buffer = [] # Initialize key buffer for global key events
         self.installEventFilter(self) # Install event filter on self
 
+        # Canlı Saat Timer
+        self.live_clock_timer = QtCore.QTimer(self)
+        self.live_clock_timer.timeout.connect(self.update_live_clock)
+        self.live_clock_timer.start(1000)
+
+    def update_live_clock(self):
+        now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        self.ui.txt_time.setText(now)
+
     def eventFilter(self, obj, event):
         if event.type() == QtCore.QEvent.KeyPress:
             key_code = event.key()
@@ -1378,6 +1391,10 @@ class Main(QMainWindow):
     def start_dialog(self): self.dia = QDialog(); u = Ui_Start_Dialog(); u.setupUi(self.dia); u.btn_Start_P.clicked.connect(lambda: self.begin_process(u)); self.dia.exec_()
 
     def begin_process(self, u):
+        # Durdur canlı saati (başlangıç zamanı olarak kalsın)
+        if self.live_clock_timer.isActive():
+            self.live_clock_timer.stop()
+
         now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         rid = int(report_index()) + 1
         insert_report(rid, "1", now, "IP", u.txt_type.text(), u.txt_amount.text(), u.txt_pieces.text(), u.txtArea_info.toPlainText())
@@ -1426,6 +1443,8 @@ class Main(QMainWindow):
     def on_finished(self):
         self.ui.btn_Start.setText("Başlat"); rid = report_index(); set_report_end_time(rid)
         QMessageBox.information(self, "Bitti", f"İşlem tamamlandı.\nRapor No: {rid}")
+        # İşlem bitti, canlı saati tekrar başlat
+        self.live_clock_timer.start(1000)
     def settings_click(self):
         d = QDialog(); u = Ui_Ui_Settings_Dialog(); u.setupUi(d)
         u.line_Ekds.setText(str(settings.DESIRED_TEMP))
