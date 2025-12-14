@@ -7,6 +7,15 @@ ISPM-15 FINAL RUHSAT SİMÜLASYONU (mainS.py) - V8
 """
 import os
 import sys
+
+# FIX: Force xcb plugin path for PyInstaller execution
+# This fixes "qt.qpa.plugin: Could not find the Qt platform plugin 'xcb' in ''"
+if getattr(sys, 'frozen', False):
+    # When bundled with --collect-all PyQt5, plugins are usually here
+    base_dir = sys._MEIPASS
+    plugin_path = os.path.join(base_dir, 'PyQt5', 'Qt', 'plugins')
+    os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = plugin_path
+
 import time
 import datetime
 import threading
