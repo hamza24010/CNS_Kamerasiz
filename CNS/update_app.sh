@@ -21,9 +21,13 @@ cd "$REPO_DIR"
 echo "Fetching latest changes..."
 git fetch origin
 
+# Determine current branch
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+echo "Current branch: $BRANCH"
+
 # Check if there are updates
 LOCAL=$(git rev-parse @)
-REMOTE=$(git rev-parse @{u})
+REMOTE=$(git rev-parse "origin/$BRANCH")
 
 if [ "$LOCAL" = "$REMOTE" ]; then
     echo "Already up to date."
@@ -33,8 +37,9 @@ if [ "$LOCAL" = "$REMOTE" ]; then
     echo "Rebuilding to ensure consistency..."
 else
     echo "New version available. Updating..."
-    git reset --hard origin/main
-    git pull
+    # Force reset to remote branch state, avoiding merge conflicts
+    git reset --hard "origin/$BRANCH"
+    git clean -fd
 fi
 
 echo "Running build script..."
