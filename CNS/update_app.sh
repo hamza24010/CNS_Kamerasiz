@@ -45,8 +45,15 @@ cd CNS
 
 echo "Deploying new binary..."
 if [ -f "dist/CNS_App" ]; then
-    cp "dist/CNS_App" "$INSTALL_DIR/"
-    chmod 700 "$INSTALL_DIR/CNS_App"
+    # Handle "Text file busy" by moving the old binary aside first, or writing to a temp file then moving
+    # Best practice for updating running binary:
+    # 1. Copy new binary to temp name
+    cp "dist/CNS_App" "$INSTALL_DIR/CNS_App.new"
+    chmod 700 "$INSTALL_DIR/CNS_App.new"
+
+    # 2. Move new over old (atomic replacement)
+    mv "$INSTALL_DIR/CNS_App.new" "$INSTALL_DIR/CNS_App"
+
     echo "Update successful!"
 else
     echo "Error: Build failed, binary not found."
