@@ -44,7 +44,8 @@ fi
 
 # Copy assets
 cp "mainDb.sqlite" "$INSTALL_DIR/" || echo "Warning: mainDb.sqlite not found, skipping."
-cp "icon.png" "$INSTALL_DIR/$ICON_NAME" || echo "Warning: icon.png not found, skipping."
+# Copy icon to a public location so the Desktop environment can read it
+cp "icon.png" "/usr/share/pixmaps/$ICON_NAME" || echo "Warning: icon.png not found, skipping."
 cp "DejaVuSans.ttf" "$INSTALL_DIR/" || echo "Warning: DejaVuSans.ttf not found, skipping."
 cp "settings.py" "$INSTALL_DIR/" || echo "Warning: settings.py not found, skipping."
 
@@ -72,7 +73,7 @@ Type=Application
 Name=CNS Control
 Comment=CNS Control Application
 Exec=sudo $INSTALL_DIR/$APP_NAME
-Icon=$INSTALL_DIR/$ICON_NAME
+Icon=/usr/share/pixmaps/$ICON_NAME
 Terminal=false
 StartupNotify=true
 Categories=Utility;
