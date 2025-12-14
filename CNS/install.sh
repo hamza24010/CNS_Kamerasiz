@@ -20,6 +20,18 @@ apt-get install -y libgl1 libqt5gui5 libqt5widgets5
 
 echo "Creating installation directory at $INSTALL_DIR..."
 mkdir -p "$INSTALL_DIR"
+mkdir -p "$INSTALL_DIR/repo"
+
+echo "Copying repository for auto-update..."
+# Copy the entire git repository to /opt/CNS/repo
+# Assuming install.sh is run from inside CNS/ folder, so repo root is ..
+if [ -d "../.git" ]; then
+    cp -r ../. "$INSTALL_DIR/repo/"
+else
+    echo "Warning: .git directory not found in parent. Auto-update may not work."
+    # Copy current dir as fallback
+    cp -r . "$INSTALL_DIR/repo/CNS/" 2>/dev/null || true
+fi
 
 echo "Copying application files..."
 # Assuming we are running from the source directory and build.sh has been run

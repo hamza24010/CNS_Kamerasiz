@@ -1,0 +1,56 @@
+#!/bin/bash
+set -e
+
+# Log file
+LOGfile="/tmp/cns_update.log"
+exec > >(tee -a "$LOGfile") 2>&1
+
+echo "Starting update process at $(date)..."
+
+# Target Directory
+REPO_DIR="/opt/CNS/repo"
+INSTALL_DIR="/opt/CNS"
+
+if [ ! -d "$REPO_DIR/.git" ]; then
+    echo "Error: Git repository not found in $REPO_DIR"
+    exit 1
+fi
+
+cd "$REPO_DIR"
+
+echo "Fetching latest changes..."
+git fetch origin
+
+# Check if there are updates
+LOCAL=$(git rev-parse @)
+REMOTE=$(git rev-parse @{u})
+
+if [ "$LOCAL" = "$REMOTE" ]; then
+    echo "Already up to date."
+    # Optional: Force rebuild anyway if flag passed?
+    # For now, just rebuild to be safe or exit?
+    # User might want to "Repair". Let's rebuild.
+    echo "Rebuilding to ensure consistency..."
+else
+    echo "New version available. Updating..."
+    git reset --hard origin/main
+    git pull
+fi
+
+echo "Running build script..."
+# Ensure build script is executable
+chmod +x CNS/build.sh
+cd CNS
+./build.sh
+
+echo "Deploying new binary..."
+if [ -f "dist/CNS_App" ]; then
+    cp "dist/CNS_App" "$INSTALL_DIR/"
+    chmod 700 "$INSTALL_DIR/CNS_App"
+    echo "Update successful!"
+else
+    echo "Error: Build failed, binary not found."
+    exit 1
+fi
+
+echo "Update process finished at $(date)."

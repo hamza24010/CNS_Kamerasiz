@@ -1061,6 +1061,13 @@ class AdminPanel(QDialog):
         btn_save = QPushButton("Kaydet")
         btn_save.clicked.connect(self.save_settings)
         layout.addWidget(btn_save)
+
+        # Güncelleme Butonu
+        layout.addWidget(QLabel("")) # Boşluk
+        btn_update = QPushButton("Yazılımı Güncelle (GitHub)")
+        btn_update.setStyleSheet("background-color: #ffcccb; color: black;")
+        btn_update.clicked.connect(self.update_software)
+        layout.addWidget(btn_update)
         
     def create_input(self, label_text, default_val):
         layout = QHBoxLayout()
@@ -1099,6 +1106,40 @@ class AdminPanel(QDialog):
         val = random.random()
         self.inp_efficiency[1].setValue(val)
         
+    def update_software(self):
+        reply = QMessageBox.question(self, 'Güncelleme',
+                                     'Yazılım internet üzerinden güncellenecek ve yeniden başlatılacak.\nDevam etmek istiyor musunuz?',
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            # Show waiting dialog
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Güncelleme")
+            msg.setText("Güncelleme yapılıyor, lütfen bekleyiniz...")
+            msg.setStandardButtons(QMessageBox.NoButton)
+            msg.show()
+            QApplication.processEvents()
+
+            update_script = "/opt/CNS/repo/CNS/update_app.sh"
+            if not os.path.exists(update_script):
+                # Fallback for dev environment
+                update_script = os.path.join(os.getcwd(), "update_app.sh")
+
+            try:
+                # Run update script
+                result = subprocess.run([update_script], capture_output=True, text=True)
+
+                if result.returncode == 0:
+                    QMessageBox.information(self, "Başarılı", "Güncelleme tamamlandı. Uygulama yeniden başlatılıyor.")
+                    # Restart application
+                    python = sys.executable
+                    os.execl(python, python, *sys.argv)
+                else:
+                    QMessageBox.critical(self, "Hata", f"Güncelleme başarısız oldu:\n{result.stderr}\n{result.stdout}")
+            except Exception as e:
+                QMessageBox.critical(self, "Hata", f"Bir hata oluştu: {e}")
+            finally:
+                msg.close()
+
     def save_settings(self):
         # Ayarları güncelle
         slow_sensors_text = self.inp_slow_sensors[1].text()
