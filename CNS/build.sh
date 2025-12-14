@@ -9,7 +9,8 @@ echo "Creating build environment..."
 if ! python3 -m venv build_venv --system-site-packages; then
     echo "venv module missing. Attempting to install..."
     if [ "$EUID" -eq 0 ]; then
-        apt-get update && apt-get install -y python3-venv python3-pyqt5 python3-opencv || apt-get install -y python3.12-venv python3-pyqt5 python3-opencv
+        # Install venv, pyqt5, opencv AND libxcb dependencies to prevent "qt.qpa.plugin: Could not find the Qt platform plugin 'xcb'" error
+        apt-get update && apt-get install -y python3-venv python3-pyqt5 python3-opencv libxcb-xinerama0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xfixes0 libxcb-shape0 libxcb-sync1 libxcb-shm0 libx11-xcb1 || apt-get install -y python3.12-venv python3-pyqt5 python3-opencv libxcb-xinerama0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xfixes0 libxcb-shape0 libxcb-sync1 libxcb-shm0 libx11-xcb1
         python3 -m venv build_venv --system-site-packages
     else
         echo "Error: python3-venv is missing. Please run: sudo apt install python3-venv python3-pyqt5 python3-opencv"

@@ -16,7 +16,8 @@ echo "Installing system dependencies..."
 apt-get update
 # libatlas-base-dev removed as it caused issues on newer Debian versions. 
 # Numpy wheels usually include necessary libraries.
-apt-get install -y libgl1 libqt5gui5 libqt5widgets5
+# Adding libxcb and related libraries to fix "Could not find the Qt platform plugin 'xcb'"
+apt-get install -y libgl1 libqt5gui5 libqt5widgets5 libxcb-xinerama0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xfixes0 libxcb-shape0 libxcb-sync1 libxcb-shm0 libx11-xcb1
 
 echo "Creating installation directory at $INSTALL_DIR..."
 mkdir -p "$INSTALL_DIR"
