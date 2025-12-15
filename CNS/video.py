@@ -95,6 +95,7 @@ class KameraVibe(QWidget):
     def __init__(self, rtsp_url, parti_no, start_phase=1):
         super().__init__()
         self.rtsp_url = rtsp_url
+        print(f"Kamera Bağlantısı deneniyor: {self.rtsp_url}")
         self.parti_no = parti_no
         self.process_idx = start_phase
 

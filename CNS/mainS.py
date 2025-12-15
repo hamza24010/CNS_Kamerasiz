@@ -1416,8 +1416,12 @@ class Main(QMainWindow):
         ip_addr = getattr(settings, 'IP', '192.168.1.9')
         if not ip_addr: ip_addr = '192.168.1.9'
 
+        # Temizlik ve Düzeltme
+        ip_addr = str(ip_addr).strip().replace(',', '.')
+
         # IP Düzeltme Mantığı (0.104 -> 192.168.0.104)
         if ip_addr.startswith("0."):
+            # Kullanici "0.104" giriyor -> Biz "192.168.0.104" istiyoruz.
             ip_addr = "192.168." + ip_addr
 
         return f"rtsp://admin:L2F4F47D@{ip_addr}:554/cam/realmonitor?channel=1&subtype=0"
