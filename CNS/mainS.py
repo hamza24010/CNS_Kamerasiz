@@ -1412,6 +1412,16 @@ class Main(QMainWindow):
         else: self.start_dialog()
     def start_dialog(self): self.dia = QDialog(); u = Ui_Start_Dialog(); u.setupUi(self.dia); u.btn_Start_P.clicked.connect(lambda: self.begin_process(u)); self.dia.exec_()
 
+    def get_rtsp_url(self):
+        ip_addr = getattr(settings, 'IP', '192.168.1.9')
+        if not ip_addr: ip_addr = '192.168.1.9'
+
+        # IP Düzeltme Mantığı (0.104 -> 192.168.0.104)
+        if ip_addr.startswith("0."):
+            ip_addr = "192.168." + ip_addr
+
+        return f"rtsp://admin:L2F4F47D@{ip_addr}:554/cam/realmonitor?channel=1&subtype=0"
+
     def begin_process(self, u):
         # Durdur canlı saati (başlangıç zamanı olarak kalsın)
         if self.live_clock_timer.isActive():
@@ -1426,12 +1436,7 @@ class Main(QMainWindow):
         # Kamera Kontrolü
         if getattr(settings, 'CAMERA_ENABLED', False):
             print("Kamera Modu Aktif. Kamera açılıyor...")
-            # RTSP URL oluşturma
-            ip_addr = getattr(settings, 'IP', '192.168.1.9')
-            # Eğer ip_addr boşsa varsayılanı kullan
-            if not ip_addr: ip_addr = '192.168.1.9'
-
-            rtsp = f"rtsp://admin:L2F4F47D@{ip_addr}:554/cam/realmonitor?channel=1&subtype=0"
+            rtsp = self.get_rtsp_url()
             print(f"RTSP URL: {rtsp}")
 
             self.camera_window = video.KameraVibe(rtsp, self.current_rid)
@@ -1460,11 +1465,29 @@ class Main(QMainWindow):
             if box: box.setText(v)
         rem = settings.DESIRED_SUCCESS_COUNT - int(cnt)
         self.ui.txt_step.setText(str(rem)); self.ui.tableWidget.setItem(row, 15, QTableWidgetItem(str(rem))); self.ui.tableWidget.setItem(row, 16, QTableWidgetItem(t_str)); self.ui.tableWidget.scrollToBottom()
+
     def on_finished(self):
+        # Kamera kontrolü: İşlem bittikten sonra kapaklar için video
+        if getattr(settings, 'CAMERA_ENABLED', False):
+            try:
+                rtsp = self.get_rtsp_url()
+                print("İşlem bitti. 3. Video (Kapaklar) için kamera açılıyor...")
+                # start_phase=3 modunda başlat
+                self.camera_end_window = video.KameraVibe(rtsp, self.current_rid, start_phase=3)
+                self.camera_end_window.process_completed.connect(lambda: self.finalize_process())
+                self.camera_end_window.show()
+            except Exception as e:
+                print(f"Kamera (Bitiş) Hatası: {e}")
+                self.finalize_process()
+        else:
+            self.finalize_process()
+
+    def finalize_process(self):
         self.ui.btn_Start.setText("Başlat"); rid = report_index(); set_report_end_time(rid)
         QMessageBox.information(self, "Bitti", f"İşlem tamamlandı.\nRapor No: {rid}")
         # İşlem bitti, canlı saati tekrar başlat
         self.live_clock_timer.start(1000)
+
     def settings_click(self):
         d = QDialog(); u = Ui_Ui_Settings_Dialog(); u.setupUi(d)
         u.line_Ekds.setText(str(settings.DESIRED_TEMP))
