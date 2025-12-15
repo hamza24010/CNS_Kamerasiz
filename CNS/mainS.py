@@ -1199,9 +1199,14 @@ class DataUpdateThread(QtCore.QThread):
         conn = get_db()
 
         # GPIO Kurulumu
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setup(settings.resistance_pin, GPIO.OUT, initial=GPIO.HIGH) # Rezistans (Pin 13)
-        GPIO.setup(settings.fan_right_pin, GPIO.OUT, initial=GPIO.HIGH)  # Fan (Pin 24)
+        try:
+            GPIO.setmode(GPIO.BCM)
+            GPIO.setwarnings(False)
+            GPIO.setup(settings.resistance_pin, GPIO.OUT, initial=GPIO.HIGH) # Rezistans (Pin 13)
+            GPIO.setup(settings.fan_right_pin, GPIO.OUT, initial=GPIO.HIGH)  # Fan (Pin 24)
+        except Exception as e:
+            print(f"GPIO Setup Error (Ignored): {e}")
+            # Devam ediyoruz, çünkü muhtemelen Main class zaten setup yapti
         
         dt_first_time = datetime.datetime.now() - datetime.timedelta(seconds=settings.DESIRED_SECONDS)
         
