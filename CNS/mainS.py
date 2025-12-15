@@ -308,8 +308,13 @@ def load_settings_module(path):
 
 def save_settings_to_file(path, new_values):
     # Dosyayı satır satır oku ve değerleri güncelle
-    with open(path, 'r', encoding='utf-8') as f:
-        lines = f.readlines()
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        lines = []
+
+    keys_found = set()
     
     with open(path, 'w', encoding='utf-8') as f:
         for line in lines:
@@ -321,9 +326,19 @@ def save_settings_to_file(path, new_values):
                     val_str = "True" if isinstance(val, bool) and val else "False" if isinstance(val, bool) else f"'{val}'" if isinstance(val, str) else str(val)
                     f.write(f"{key} = {val_str}\n")
                     updated = True
+                    keys_found.add(key)
                     break
             if not updated:
                 f.write(line)
+
+        # Append missing keys
+        for key, val in new_values.items():
+            if key not in keys_found:
+                val_str = "True" if isinstance(val, bool) and val else "False" if isinstance(val, bool) else f"'{val}'" if isinstance(val, str) else str(val)
+                f.write(f"\n{key} = {val_str}\n")
+
+        f.flush()
+        os.fsync(f.fileno())
 
 # Initial loading of settings
 if not os.path.exists(settings_path):
@@ -1133,30 +1148,33 @@ class AdminPanel(QDialog):
                 msg.close()
 
     def save_settings(self):
-        # Ayarları güncelle
-        slow_sensors_text = self.inp_slow_sensors[1].text()
         try:
-            slow_sensors = [int(x.strip()) for x in slow_sensors_text.split(',') if x.strip().isdigit()]
-        except:
-            slow_sensors = [1, 2, 3, 4]
+            # Ayarları güncelle
+            slow_sensors_text = self.inp_slow_sensors[1].text()
+            try:
+                slow_sensors = [int(x.strip()) for x in slow_sensors_text.split(',') if x.strip().isdigit()]
+            except:
+                slow_sensors = [1, 2, 3, 4]
 
-        new_settings_dict = {
-            "DESIRED_ENGINE_MUNITE": self.inp_fan_work[1].value(),
-            "ENGINE_RESTING_MUNITE": self.inp_fan_rest[1].value(),
-            "RESISTANCE_WORK_MIN": self.inp_rez_work[1].value(),
-            "RESISTANCE_REST_MIN": self.inp_rez_rest[1].value(),
-            "SIM_IS_RANDOM": self.chk_random.isChecked(),
-            "SIM_EFFICIENCY": self.inp_efficiency[1].value(),
-            "fan_right_pin": self.inp_fan_pin[1].value(),
-            "resistance_pin": self.inp_rez_pin[1].value(),
-            "SLOW_SENSORS": slow_sensors,
-            "CAMERA_ENABLED": self.chk_camera.isChecked()
-        }
-        # CAMERA_RTSP_URL artık kullanılmıyor, IP settings'den geliyor
-        save_settings_to_file(settings_path, new_settings_dict)
-        global settings; settings = load_settings_module(settings_path) # Reload immediately
-        QMessageBox.information(self, "Bilgi", "Ayarlar güncellendi!")
-        self.close()
+            new_settings_dict = {
+                "DESIRED_ENGINE_MUNITE": self.inp_fan_work[1].value(),
+                "ENGINE_RESTING_MUNITE": self.inp_fan_rest[1].value(),
+                "RESISTANCE_WORK_MIN": self.inp_rez_work[1].value(),
+                "RESISTANCE_REST_MIN": self.inp_rez_rest[1].value(),
+                "SIM_IS_RANDOM": self.chk_random.isChecked(),
+                "SIM_EFFICIENCY": self.inp_efficiency[1].value(),
+                "fan_right_pin": self.inp_fan_pin[1].value(),
+                "resistance_pin": self.inp_rez_pin[1].value(),
+                "SLOW_SENSORS": slow_sensors,
+                "CAMERA_ENABLED": self.chk_camera.isChecked()
+            }
+            # CAMERA_RTSP_URL artık kullanılmıyor, IP settings'den geliyor
+            save_settings_to_file(settings_path, new_settings_dict)
+            global settings; settings = load_settings_module(settings_path) # Reload immediately
+            QMessageBox.information(self, "Bilgi", "Ayarlar güncellendi!")
+            self.close()
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", f"Ayarlar kaydedilemedi: {e}")
 
 # --- VERİ THREAD ---
 class DataUpdateThread(QtCore.QThread):
@@ -1464,6 +1482,8 @@ class Main(QMainWindow):
                 QMessageBox.information(self, "Bilgi", "Ayarlar kaydedildi.")
             except ValueError:
                 QMessageBox.warning(self, "Hata", "Lütfen sayısal değerleri doğru giriniz.")
+            except Exception as e:
+                QMessageBox.critical(self, "Hata", f"Kayıt Hatası: {e}")
                 
         u.btn_SettingsSave.clicked.connect(save); d.exec_()
 
