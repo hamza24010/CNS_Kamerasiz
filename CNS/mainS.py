@@ -1428,7 +1428,7 @@ class Main(QMainWindow):
             # Kullanici "0.104" giriyor -> Biz "192.168.0.104" istiyoruz.
             ip_addr = "192.168." + ip_addr
 
-        return f"rtsp://admin:L2F4F47D@{ip_addr}:554/cam/realmonitor?channel=1&subtype=0"
+        return f"rtsp://admin:arscns35@{ip_addr}:554/cam/realmonitor?channel=1&subtype=0"
 
     def begin_process(self, u):
         # Durdur canlı saati (başlangıç zamanı olarak kalsın)
