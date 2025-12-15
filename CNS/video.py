@@ -135,7 +135,7 @@ class KameraVibe(QWidget):
 
         # Başlat butonu
         if self.process_idx == 3:
-            btn_text = "Fırın kapaklarını açın ve Son Kaydı Başlatın"
+            btn_text = "İşlem Tamamlandı. 3. Kaydı Başlat"
         else:
             btn_text = "Fırın boş durumda 1. Video Kaydını Başlat"
 
@@ -218,7 +218,14 @@ class KameraVibe(QWidget):
             self.button.setEnabled(False)
         elif self.process_idx == 3:
             QMessageBox.information(
-                self, "Bilgi", "Son kayıt tamamlandı. İşlem Bitiyor."
+                self, "Bilgi", "3. Kayıt tamamlandı. Fırın kapaklarını açın ve 4. Kaydı Başlatın."
+            )
+            self.process_idx = 4
+            self.button.setText("Kapaklar açık. 4. Kaydı Başlat")
+            self.button.setEnabled(True)
+        elif self.process_idx == 4:
+            QMessageBox.information(
+                self, "Bilgi", "Son kayıt (4. Video) tamamlandı. İşlem Bitiyor."
             )
             self.process_completed.emit(self.process_idx)
             self.close()
