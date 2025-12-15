@@ -1181,13 +1181,11 @@ class DataUpdateThread(QtCore.QThread):
     data_updated = QtCore.pyqtSignal(str, *[str]*16)
     finished = QtCore.pyqtSignal()
 
-    def __init__(self):
+    def __init__(self, rid):
         super().__init__()
+        self.rid = rid
         # Ayarları Yükle
         global settings; settings = load_settings_module(get_writable_settings_path())
-        self.sim = ISPM15Simulator()
-        self.counter = 0
-        self.target_count = settings.DESIRED_SUCCESS_COUNT
         self.sim = ISPM15Simulator()
         self.counter = 0
         self.target_count = settings.DESIRED_SUCCESS_COUNT
@@ -1197,6 +1195,9 @@ class DataUpdateThread(QtCore.QThread):
     def run(self):
         self.stop_event = threading.Event(); self.pause_event = threading.Event()
         
+        # Dedicated DB connection for this thread
+        conn = get_db()
+
         # GPIO Kurulumu
         GPIO.setmode(GPIO.BCM)
         GPIO.setup(settings.resistance_pin, GPIO.OUT, initial=GPIO.HIGH) # Rezistans (Pin 13)
@@ -1286,7 +1287,20 @@ class DataUpdateThread(QtCore.QThread):
                 
             dt_first_time += datetime.timedelta(seconds=settings.DESIRED_SECONDS)
             t_str = dt_first_time.strftime('%Y-%m-%d %H:%M:%S')
-            self.data_updated.emit(t_str, *map(str, vals), str(self.counter))
+
+            # Format values for DB and UI
+            formatted_vals = [f"{v:.2f}" for v in vals]
+            rem = settings.DESIRED_SUCCESS_COUNT - self.counter
+
+            # Write to DB in background thread
+            try:
+                conn.execute("INSERT INTO Report_Details VALUES (NULL,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                             (self.rid, *formatted_vals, "0", "0", t_str, rem))
+                conn.commit()
+            except Exception as e:
+                print(f"DB Error in thread: {e}")
+
+            self.data_updated.emit(t_str, *formatted_vals, str(self.counter))
             
             if self.turbo:
                 time.sleep(0.001) # Turbo: Bekleme yok
@@ -1299,7 +1313,9 @@ class DataUpdateThread(QtCore.QThread):
             GPIO.output(settings.fan_right_pin, GPIO.HIGH)
             GPIO.output(settings.resistance_pin, GPIO.HIGH)
             print("Simülasyon Bitti. Röleler Kapatıldı.")
-            self.finished.emit()
+
+        conn.close()
+        self.finished.emit()
 
 # --- MAIN ---
 class Main(QMainWindow):
@@ -1402,8 +1418,8 @@ class Main(QMainWindow):
             self.live_clock_timer.stop()
 
         now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        rid = int(report_index()) + 1
-        insert_report(rid, "1", now, "IP", u.txt_type.text(), u.txt_amount.text(), u.txt_pieces.text(), u.txtArea_info.toPlainText())
+        self.current_rid = int(report_index()) + 1
+        insert_report(self.current_rid, "1", now, "IP", u.txt_type.text(), u.txt_amount.text(), u.txt_pieces.text(), u.txtArea_info.toPlainText())
         self.ui.txt_time.setText(now)
         self.ui.tableWidget.setRowCount(0) # Eski verileri temizle
 
@@ -1418,7 +1434,7 @@ class Main(QMainWindow):
             rtsp = f"rtsp://admin:L2F4F47D@{ip_addr}:554/cam/realmonitor?channel=1&subtype=0"
             print(f"RTSP URL: {rtsp}")
 
-            self.camera_window = video.KameraVibe(rtsp, rid)
+            self.camera_window = video.KameraVibe(rtsp, self.current_rid)
             # Kamera işlemi bittiğinde simülasyonu başlat
             self.camera_window.process_completed.connect(self.start_simulation_thread)
             self.camera_window.show()
@@ -1428,7 +1444,7 @@ class Main(QMainWindow):
             self.dia.close()
 
     def start_simulation_thread(self, *args):
-        self.thread = DataUpdateThread(); self.thread.data_updated.connect(self.on_data); self.thread.finished.connect(self.on_finished); self.thread.start()
+        self.thread = DataUpdateThread(self.current_rid); self.thread.data_updated.connect(self.on_data); self.thread.finished.connect(self.on_finished); self.thread.start()
         self.ui.btn_Start.setText("Duraklat")
         # Eğer kamera varsa kapat (zaten kapanmış olabilir ama garanti olsun)
         if hasattr(self, 'camera_window'):
@@ -1436,16 +1452,14 @@ class Main(QMainWindow):
 
     def on_data(self, t_str, *args):
         vals = args[:15]; cnt = args[15]; row = self.ui.tableWidget.rowCount(); self.ui.tableWidget.insertRow(row)
-        db_vals = []
         for i, v in enumerate(vals):
-            fv = float(v); item = QTableWidgetItem(f"{fv:.2f}"); db_vals.append(f"{fv:.2f}")
+            fv = float(v); item = QTableWidgetItem(v)
             if fv >= settings.DESIRED_TEMP and fv > 0.1: item.setBackground(QColor(0,255,0))
             self.ui.tableWidget.setItem(row, i, item)
             box = getattr(self.ui, f"txt_prob_status_{i+1}" if i > 0 else "txt_prob_status", None)
-            if box: box.setText(f"{fv:.2f}")
+            if box: box.setText(v)
         rem = settings.DESIRED_SUCCESS_COUNT - int(cnt)
         self.ui.txt_step.setText(str(rem)); self.ui.tableWidget.setItem(row, 15, QTableWidgetItem(str(rem))); self.ui.tableWidget.setItem(row, 16, QTableWidgetItem(t_str)); self.ui.tableWidget.scrollToBottom()
-        insert_report_step(report_index(), *db_vals, "0", "0", t_str, rem)
     def on_finished(self):
         self.ui.btn_Start.setText("Başlat"); rid = report_index(); set_report_end_time(rid)
         QMessageBox.information(self, "Bitti", f"İşlem tamamlandı.\nRapor No: {rid}")
