@@ -26,7 +26,6 @@ import random
 import atexit
 import math
 import requests # Hava durumu için
-from urllib.parse import quote
 from collections import deque
 import video # Kamera Entegrasyonu
 
@@ -371,8 +370,6 @@ except Exception as e:
         SIM_EFFICIENCY=0.5
         SLOW_SENSORS=[1, 2, 3, 4]
         CAMERA_ENABLED=False
-        CAMERA_USER="admin"
-        CAMERA_PASSWORD="L2F4F47D"
         CAMERA_RTSP_URL="rtsp://admin:L2F4F47D@192.168.1.9:554/cam/realmonitor?channel=1&subtype=0"
     settings = DummySettings()
 
@@ -1063,12 +1060,6 @@ class AdminPanel(QDialog):
         self.chk_camera.setChecked(getattr(settings, 'CAMERA_ENABLED', False))
         layout.addWidget(self.chk_camera)
 
-        self.inp_cam_user = self.create_text_input("Kamera Kullanıcı:", getattr(settings, 'CAMERA_USER', 'admin'))
-        layout.addLayout(self.inp_cam_user[0])
-
-        self.inp_cam_pass = self.create_text_input("Kamera Şifre:", getattr(settings, 'CAMERA_PASSWORD', 'L2F4F47D'))
-        layout.addLayout(self.inp_cam_pass[0])
-
         # RTSP URL artık settings.IP üzerinden otomatik oluşturuluyor, buradaki input kaldırıldı.
 
         self.toggle_random(self.chk_random.isChecked()) # Init state
@@ -1175,9 +1166,7 @@ class AdminPanel(QDialog):
                 "fan_right_pin": self.inp_fan_pin[1].value(),
                 "resistance_pin": self.inp_rez_pin[1].value(),
                 "SLOW_SENSORS": slow_sensors,
-                "CAMERA_ENABLED": self.chk_camera.isChecked(),
-                "CAMERA_USER": self.inp_cam_user[1].text().strip(),
-                "CAMERA_PASSWORD": self.inp_cam_pass[1].text().strip()
+                "CAMERA_ENABLED": self.chk_camera.isChecked()
             }
             # CAMERA_RTSP_URL artık kullanılmıyor, IP settings'den geliyor
             save_settings_to_file(settings_path, new_settings_dict)
@@ -1439,14 +1428,7 @@ class Main(QMainWindow):
             # Kullanici "0.104" giriyor -> Biz "192.168.0.104" istiyoruz.
             ip_addr = "192.168." + ip_addr
 
-        user = getattr(settings, 'CAMERA_USER', 'admin')
-        pwd = getattr(settings, 'CAMERA_PASSWORD', 'L2F4F47D')
-
-        # URL Encode credentials safely
-        safe_user = quote(str(user))
-        safe_pwd = quote(str(pwd))
-
-        return f"rtsp://{safe_user}:{safe_pwd}@{ip_addr}:554/cam/realmonitor?channel=1&subtype=0"
+        return f"rtsp://admin:L2F4F47D@{ip_addr}:554/cam/realmonitor?channel=1&subtype=0"
 
     def begin_process(self, u):
         # Durdur canlı saati (başlangıç zamanı olarak kalsın)
