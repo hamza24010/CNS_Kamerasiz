@@ -1427,8 +1427,12 @@ class Main(QMainWindow):
         ip_addr = getattr(settings, 'IP', '192.168.1.9')
         if not ip_addr: ip_addr = '192.168.1.9'
 
-        # Temizlik ve Düzeltme
+        # Temizlik
         ip_addr = str(ip_addr).strip().replace(',', '.')
+
+        # Eger kullanici tam bir RTSP adresi girdiyse, direkt onu dondur (Manuel Override)
+        if ip_addr.lower().startswith("rtsp://"):
+            return ip_addr
 
         # IP Düzeltme Mantığı (0.104 -> 192.168.0.104)
         if ip_addr.startswith("0."):
