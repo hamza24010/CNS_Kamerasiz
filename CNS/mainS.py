@@ -1456,6 +1456,9 @@ class Main(QMainWindow):
         u.line_Ekds.setText(str(settings.DESIRED_TEMP))
         u.line_DSC.setText(str(settings.DESIRED_SUCCESS_COUNT))
         u.line_FIRM.setText(str(settings.FIRM_NAME))
+        u.line_OVEN.setText(str(settings.OVEN_NO))
+        u.chk_validation.setChecked(getattr(settings, 'VALITADITON', False))
+        u.line_KameraIP.setText(str(getattr(settings, 'IP', '0.0.0.0')))
         
         # Resistance Max/Min Load
         u.line_Resistance_Max.setText(str(settings.RESISTANCE_MAX))
@@ -1471,6 +1474,9 @@ class Main(QMainWindow):
                     "DESIRED_TEMP": float(u.line_Ekds.text()),
                     "DESIRED_SUCCESS_COUNT": int(u.line_DSC.text()),
                     "FIRM_NAME": u.line_FIRM.text(),
+                    "OVEN_NO": u.line_OVEN.text(),
+                    "VALITADITON": u.chk_validation.isChecked(),
+                    "IP": u.line_KameraIP.text(),
                     "RESISTANCE_MAX": float(u.line_Resistance_Max.text()),
                     "RESISTANCE_MIN": float(u.line_Resistance_Min.text())
                 }
