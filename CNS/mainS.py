@@ -951,21 +951,30 @@ class MatplotlibDialog(QDialog):
         conn.close()
         time_data = [self.convert_time(row[15]) for row in data]
         y_data = [[float(value) for value in row[:15]] for row in data]
-        plt.figure(figsize=(16, 9))
+
+        # Use Figure object directly to avoid backend conflicts
+        fig = Figure(figsize=(16, 9))
+        ax = fig.add_subplot(111)
+
         for i in range(15):
             values_to_plot = [float(y[i]) if y[i] != 00.00 else None for y in y_data]
             if any(val is not None for val in values_to_plot):
                 if i == 13:
-                    plt.plot(time_data, values_to_plot, marker='*', label='Ortam 1')
+                    ax.plot(time_data, values_to_plot, marker='*', label='Ortam 1')
                 elif i == 14:
-                    plt.plot(time_data, values_to_plot, marker='*', label='Ortam 2')
+                    ax.plot(time_data, values_to_plot, marker='*', label='Ortam 2')
                 else:
-                    plt.plot(time_data, values_to_plot, marker='o', label=f'Prob{i + 1}')
-        plt.title("Parti " + str(id) + " Grafik Detayı")
-        plt.xticks(rotation=45)
-        plt.legend(loc='upper right', bbox_to_anchor=(1, 0.5))
+                    ax.plot(time_data, values_to_plot, marker='o', label=f'Prob{i + 1}')
+
+        ax.set_title("Parti " + str(id) + " Grafik Detayı")
+        # For object-oriented API, setting xticks rotation is slightly different or needs manual setting
+        # We can use fig.autofmt_xdate() or set tick parameters
+        ax.set_xticklabels(time_data, rotation=45)
+        ax.legend(loc='upper right', bbox_to_anchor=(1, 0.5))
+
         save_path = "filtered_graph_real.png"
-        plt.savefig(save_path)
+        fig.savefig(save_path)
+
         img = PILImage.open(save_path)
         rotated_img = img.rotate(-90, expand=True)
         rotated_img.save(save_path)
@@ -984,21 +993,28 @@ class MatplotlibDialog(QDialog):
         conn.close()
         time_data = [self.convert_time(row[15]) for row in data]
         y_data = [list(row[:15]) for row in data]
-        plt.figure(figsize=(16, 9))
+
+        # Use Figure object directly
+        fig = Figure(figsize=(16, 9))
+        ax = fig.add_subplot(111)
+
         for i in range(15):
             values_to_plot = [float(y[i]) if y[i] != 00.00 else None for y in y_data]
             if any(val is not None for val in values_to_plot):
                 if i == 13:
-                    plt.plot(time_data, values_to_plot, marker='*', label='Ortam 1')
+                    ax.plot(time_data, values_to_plot, marker='*', label='Ortam 1')
                 elif i == 14:
-                    plt.plot(time_data, values_to_plot, marker='*', label='Ortam 2')
+                    ax.plot(time_data, values_to_plot, marker='*', label='Ortam 2')
                 else:
-                    plt.plot(time_data, values_to_plot, marker='o', label=f'Prob{i + 1}')
-        plt.title("Parti " + str(id) + " Grafik Detayı")
-        plt.xticks(rotation=45)
-        plt.legend(loc='upper right', bbox_to_anchor=(1, 0.5))
+                    ax.plot(time_data, values_to_plot, marker='o', label=f'Prob{i + 1}')
+
+        ax.set_title("Parti " + str(id) + " Grafik Detayı")
+        ax.set_xticklabels(time_data, rotation=45)
+        ax.legend(loc='upper right', bbox_to_anchor=(1, 0.5))
+
         save_path = "graph_TEN.png"
-        plt.savefig(save_path)
+        fig.savefig(save_path)
+
         img = PILImage.open(save_path)
         rotated_img = img.rotate(-90, expand=True)
         rotated_img.save(save_path)
