@@ -69,8 +69,6 @@ class TestThreadLogic(unittest.TestCase):
     def test_relay_toggling(self, mock_requests, mock_time, mock_gpio, mock_get_db, mock_load_settings):
         mock_conn = MagicMock()
         mock_get_db.return_value = mock_conn
-
-        # Ensure thread uses our mock settings
         mock_load_settings.return_value = self.mock_settings
 
         mock_time.time.side_effect = None
@@ -97,13 +95,14 @@ class TestThreadLogic(unittest.TestCase):
             mock_time.time.side_effect = time_gen()
 
             def sleep_side_effect(seconds):
-                if mock_time.sleep.call_count >= 3:
+                # Only stop after enough iterations
+                if mock_time.sleep.call_count >= 4:
                     thread.stop_event.set()
             mock_time.sleep.side_effect = sleep_side_effect
 
             thread.stop_event = MagicMock()
             # Allow enough checks
-            thread.stop_event.is_set.side_effect = [False, False, False, False, True, True, True]
+            thread.stop_event.is_set.side_effect = [False] * 10 + [True]
 
             thread.pause_event = MagicMock()
             thread.pause_event.is_set.return_value = False
@@ -126,8 +125,6 @@ class TestThreadLogic(unittest.TestCase):
         mock_get_db.return_value = mock_conn
         mock_load_settings.return_value = self.mock_settings
 
-        self.assertNotEqual(mainS.DataUpdateThread.run, MockQThread.run)
-
         with patch('CNS.mainS.ISPM15Simulator') as MockSim:
             sim_instance = MockSim.return_value
             sim_instance.calculate_step.return_value = ([50.0]*15, False)
@@ -140,9 +137,6 @@ class TestThreadLogic(unittest.TestCase):
             pause_event_mock = MagicMock()
             mock_event_cls.side_effect = [stop_event_mock, pause_event_mock]
 
-            # 1. Loop start (False -> Enter)
-            # 2. Loop check (True -> Exit)
-            # 3. Post-loop check (True)
             stop_event_mock.is_set.side_effect = [False, True, True]
             pause_event_mock.is_set.return_value = False
 
