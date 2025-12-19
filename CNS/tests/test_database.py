@@ -44,32 +44,18 @@ class TestDatabase(unittest.TestCase):
             REPORT_INFO TEXT
         )''')
 
-        # Create Report_Details table
-        # Based on insert_report_step: (NULL,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        # There are 20 placeholders. Plus ID (NULL) = 21 columns total.
-        # Columns based on get_report_details: T1..T13, AT1, AT2, STEPNO (?), STEPTIME
-        # The query in insert_report_step has 20 args.
-        # Let's infer schema from code:
-        # insert_report_step(rid, *args) -> 20 args
-        # 15 temps + ? + ? + ? ...
-        # args are likely: T1..T13, AT1, AT2, STEPNO, STEPTIME, REMAINING?
-        # Let's create a generic schema that fits the insert statement
+        # Create Report_Details table matching the structure implied by insert_report_step
+        # insert_report_step uses "INSERT INTO Report_Details VALUES (NULL,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        # Total columns = 1 (ID) + 20 placeholders = 21 columns.
 
-        columns = ["ID INTEGER PRIMARY KEY AUTOINCREMENT", "REPORT_ID INTEGER"]
-        for i in range(1, 14): columns.append(f"T{i} TEXT")
-        columns.append("AT1 TEXT")
-        columns.append("AT2 TEXT")
-        columns.append("STEPNO TEXT") # Placeholder
-        columns.append("UNKNOWN1 TEXT")
-        columns.append("STEPTIME TEXT")
-        columns.append("REMAINING TEXT")
-
-        # This is a guess. Let's look at mainS.py logic or just use generic columns for the test
-        # insert_report_step call:
-        # "INSERT INTO Report_Details VALUES (NULL,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
-        # 1st is NULL (ID). Then 20 params.
-        # The first param of the function is 'rid', so that's likely the first ?
-        # So structure: ID, REPORT_ID, ... 19 other cols?
+        # Schema reconstruction based on mainS.py usage:
+        # - ID: Auto increment
+        # - REPORT_ID: Foreign Key (Arg 1)
+        # - T1..T13: Sensor values (Args 2-14)
+        # - AT1, AT2: Ambient values (Args 15-16)
+        # - EXTRA1, EXTRA2: Placeholders/Steps (Args 17-18)
+        # - STEPTIME: Timestamp (Arg 19)
+        # - REMAINING: Step count (Arg 20)
 
         c.execute(f'''CREATE TABLE Report_Details (
             ID INTEGER PRIMARY KEY AUTOINCREMENT,
