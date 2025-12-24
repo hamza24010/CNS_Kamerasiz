@@ -27,7 +27,7 @@ class FirebaseManager:
             # Check if already initialized to avoid ValueError
             if not firebase_admin._apps:
                 firebase_admin.initialize_app(cred, {
-                    'storageBucket': 'dummy-project-id.appspot.com' # Placeholder, user needs to update
+                    'storageBucket': 'firin-b9a60.firebasestorage.app'
                 })
 
             self.db = firestore.client()
