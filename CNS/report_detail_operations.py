@@ -16,6 +16,7 @@ from reportlab.lib.units import inch
 from reportlab.lib import colors
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from firebase_manager import firebase_manager
 
 class ReportDetailOperations:
     def __init__(self):
@@ -236,6 +237,44 @@ class ReportDetailOperations:
             img.drawHeight = 685
             story.append(img)
         doc.build(story)
+
+        # Firebase Upload
+        try:
+            report_info = {
+                'id': self.id,
+                'firm_name': settings.FIRM_NAME,
+                'oven_no': settings.OVEN_NO,
+                'start_time': data[0][1] if data else '',
+                'end_time': data[0][2] if data else '',
+                'type': data[0][3] if data else '',
+                'm3': data[0][4] if data else '',
+                'pieces': data[0][5] if data else '',
+                'description': data[0][6] if data else '',
+                'type_of_report': f"{flag}Minute"
+            }
+            firebase_manager.upload_report(report_info, file_name)
+        except Exception as e:
+            print(f"Firebase Upload Error: {e}")
+
+
+        # Firebase Upload
+        try:
+            report_info = {
+                'id': self.id,
+                'firm_name': settings.FIRM_NAME,
+                'oven_no': settings.OVEN_NO,
+                'start_time': data[0][1] if data else '',
+                'end_time': data[0][2] if data else '',
+                'type': data[0][3] if data else '',
+                'm3': data[0][4] if data else '',
+                'pieces': data[0][5] if data else '',
+                'description': data[0][6] if data else '',
+                'type_of_report': "Validation" if settings.VALITADITON else "Full"
+            }
+            firebase_manager.upload_report(report_info, file_name)
+        except Exception as e:
+            print(f"Firebase Upload Error: {e}")
+
         if flag == 1:
             subprocess.run(["lp", "-d", settings.PRINTER_NAME, file_name])
 

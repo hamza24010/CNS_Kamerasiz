@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ISPM15 Reports Viewer</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .btn { padding: 5px 10px; background-color: #007bff; color: white; text-decoration: none; border-radius: 3px; }
+        .btn:hover { background-color: #0056b3; }
+    </style>
+</head>
+<body>
+    <h1>ISPM15 Reports</h1>
+    <div id="loading">Loading reports...</div>
+    <table id="reportsTable" style="display:none;">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Firm Name</th>
+                <th>Oven No</th>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Amount</th>
+                <th>Pieces</th>
+                <th>Info</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+    </table>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // TODO: Replace with your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "API_KEY",
+            authDomain: "dummy-project-id.firebaseapp.com",
+            projectId: "dummy-project-id",
+            storageBucket: "dummy-project-id.appspot.com",
+            messagingSenderId: "SENDER_ID",
+            appId: "APP_ID"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        async function loadReports() {
+            try {
+                const q = query(collection(db, "reports"), orderBy("uploaded_at", "desc"));
+                const querySnapshot = await getDocs(q);
+
+                const tbody = document.getElementById('tableBody');
+                tbody.innerHTML = '';
+
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const row = `
+                        <tr>
+                            <td>${data.id}</td>
+                            <td>${data.firm_name}</td>
+                            <td>${data.oven_no}</td>
+                            <td>${data.start_time}</td>
+                            <td>${data.type}</td>
+                            <td>${data.m3}</td>
+                            <td>${data.pieces}</td>
+                            <td>${data.description}</td>
+                            <td>
+                                <a href="${data.pdf_url}" target="_blank" class="btn">Download PDF</a>
+                            </td>
+                        </tr>
+                    `;
+                    tbody.innerHTML += row;
+                });
+
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('reportsTable').style.display = 'table';
+            } catch (error) {
+                console.error("Error fetching reports:", error);
+                document.getElementById('loading').innerText = "Error loading reports. Check console.";
+            }
+        }
+
+        loadReports();
+    </script>
+</body>
+</html>
