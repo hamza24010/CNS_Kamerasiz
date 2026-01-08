@@ -414,6 +414,23 @@ def reset_autoincrement(table):
 
 from reportlab.lib.units import inch
 
+def get_rtsp_url_helper(ip_addr):
+    if not ip_addr: ip_addr = '192.168.1.9'
+
+    # Temizlik
+    ip_addr = str(ip_addr).strip().replace(',', '.')
+
+    # Eger kullanici tam bir RTSP adresi girdiyse, direkt onu dondur (Manuel Override)
+    if ip_addr.lower().startswith("rtsp://"):
+        return ip_addr
+
+    # IP Düzeltme Mantığı (0.104 -> 192.168.0.104)
+    if ip_addr.startswith("0."):
+        # Kullanici "0.104" giriyor -> Biz "192.168.0.104" istiyoruz.
+        ip_addr = "192.168." + ip_addr
+
+    return f"rtsp://admin:arscns35@{ip_addr}:554/cam/realmonitor?channel=1&subtype=0"
+
 # --- UI SINIFLARI ---
 class ReportOperations:
     def __init__(self):
@@ -1435,21 +1452,7 @@ class Main(QMainWindow):
 
     def get_rtsp_url(self):
         ip_addr = getattr(settings, 'IP', '192.168.1.9')
-        if not ip_addr: ip_addr = '192.168.1.9'
-
-        # Temizlik
-        ip_addr = str(ip_addr).strip().replace(',', '.')
-
-        # Eger kullanici tam bir RTSP adresi girdiyse, direkt onu dondur (Manuel Override)
-        if ip_addr.lower().startswith("rtsp://"):
-            return ip_addr
-
-        # IP Düzeltme Mantığı (0.104 -> 192.168.0.104)
-        if ip_addr.startswith("0."):
-            # Kullanici "0.104" giriyor -> Biz "192.168.0.104" istiyoruz.
-            ip_addr = "192.168." + ip_addr
-
-        return f"rtsp://admin:arscns35@{ip_addr}:554/cam/realmonitor?channel=1&subtype=0"
+        return get_rtsp_url_helper(ip_addr)
 
     def begin_process(self, u):
         # Durdur canlı saati (başlangıç zamanı olarak kalsın)
