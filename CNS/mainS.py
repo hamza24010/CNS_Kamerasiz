@@ -7,6 +7,15 @@ ISPM-15 FINAL RUHSAT SİMÜLASYONU (mainS.py) - V8
 """
 import os
 import sys
+
+# FIX: Force xcb plugin path for PyInstaller execution
+# This fixes "qt.qpa.plugin: Could not find the Qt platform plugin 'xcb' in ''"
+if getattr(sys, 'frozen', False):
+    # When bundled with --collect-all PyQt5, plugins are usually here
+    base_dir = sys._MEIPASS
+    plugin_path = os.path.join(base_dir, 'PyQt5', 'Qt', 'plugins')
+    os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = plugin_path
+
 import time
 import datetime
 import threading
@@ -18,6 +27,7 @@ import atexit
 import math
 import requests # Hava durumu için
 from collections import deque
+import video # Kamera Entegrasyonu
 
 # Grafik ve PDF
 import matplotlib.pyplot as plt
@@ -30,7 +40,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 
 # PyQt5
 from PyQt5 import QtCore, QtWidgets, QtGui
-from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QVBoxLayout, QPushButton, QMessageBox, QTableWidgetItem, QLabel, QSpinBox, QHBoxLayout
+from PyQt5.QtWidgets import QApplication, QMainWindow, QDialog, QVBoxLayout, QPushButton, QMessageBox, QTableWidgetItem, QLabel, QSpinBox, QHBoxLayout, QCheckBox, QDoubleSpinBox
 from PyQt5.QtGui import QBrush, QColor, QGuiApplication
 
 # UI Dosyaları
@@ -109,8 +119,14 @@ class ISPM15Simulator:
         
         # --- FİZİK MODELİ 2.0 (Gelişmiş Gerçekçilik) ---
         # Efficiency (Verim): 0.0 (Yavaş/Gürültülü) <-> 1.0 (Hızlı/Temiz)
-        self.efficiency = random.random()
-        print(f"Fırın Verimlilik Faktörü: {self.efficiency:.2f} (0=Eski, 1=Yeni)")
+        if getattr(settings, 'SIM_IS_RANDOM', True):
+            self.efficiency = random.random()
+            print(f"Fırın Verimlilik Faktörü (Random): {self.efficiency:.2f} (0=Eski, 1=Yeni)")
+        else:
+            self.efficiency = getattr(settings, 'SIM_EFFICIENCY', 0.5)
+            # Clip between 0.0 and 1.0 just in case
+            self.efficiency = max(0.0, min(1.0, self.efficiency))
+            print(f"Fırın Verimlilik Faktörü (Manual): {self.efficiency:.2f} (0=Eski, 1=Yeni)")
         
         # Parametre İnterpolasyonu
         def lerp(a, b, t): return a + t * (b - a)
@@ -297,8 +313,13 @@ def load_settings_module(path):
 
 def save_settings_to_file(path, new_values):
     # Dosyayı satır satır oku ve değerleri güncelle
-    with open(path, 'r', encoding='utf-8') as f:
-        lines = f.readlines()
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+    except FileNotFoundError:
+        lines = []
+
+    keys_found = set()
     
     with open(path, 'w', encoding='utf-8') as f:
         for line in lines:
@@ -310,9 +331,19 @@ def save_settings_to_file(path, new_values):
                     val_str = "True" if isinstance(val, bool) and val else "False" if isinstance(val, bool) else f"'{val}'" if isinstance(val, str) else str(val)
                     f.write(f"{key} = {val_str}\n")
                     updated = True
+                    keys_found.add(key)
                     break
             if not updated:
                 f.write(line)
+
+        # Append missing keys
+        for key, val in new_values.items():
+            if key not in keys_found:
+                val_str = "True" if isinstance(val, bool) and val else "False" if isinstance(val, bool) else f"'{val}'" if isinstance(val, str) else str(val)
+                f.write(f"\n{key} = {val_str}\n")
+
+        f.flush()
+        os.fsync(f.fileno())
 
 # Initial loading of settings
 if not os.path.exists(settings_path):
@@ -340,6 +371,11 @@ except Exception as e:
         # Add new settings with default values for DummySettings
         RESISTANCE_WORK_MIN=1
         RESISTANCE_REST_MIN=1
+        SIM_IS_RANDOM=True
+        SIM_EFFICIENCY=0.5
+        SLOW_SENSORS=[1, 2, 3, 4]
+        CAMERA_ENABLED=False
+        CAMERA_RTSP_URL="rtsp://admin:L2F4F47D@192.168.1.9:554/cam/realmonitor?channel=1&subtype=0"
     settings = DummySettings()
 
 
@@ -981,7 +1017,9 @@ class AdminPanel(QDialog):
         layout = QVBoxLayout(self)
         
         # Fan Ayarları
-        layout.addWidget(QLabel("--- FAN KONTROLÜ (Pin 20) ---"))
+        layout.addWidget(QLabel(f"--- FAN KONTROLÜ (Pin {settings.fan_right_pin}) ---"))
+        self.inp_fan_pin = self.create_input("Fan Pini (BCM):", settings.fan_right_pin)
+        layout.addLayout(self.inp_fan_pin[0])
         self.inp_fan_work = self.create_input("Çalışma Süresi (Dk):", settings.DESIRED_ENGINE_MUNITE)
         layout.addLayout(self.inp_fan_work[0])
         self.inp_fan_rest = self.create_input("Bekleme Süresi (Dk):", settings.ENGINE_RESTING_MUNITE)
@@ -990,16 +1028,58 @@ class AdminPanel(QDialog):
         layout.addWidget(QLabel("")) # Boşluk
         
         # Rezistans Ayarları
-        layout.addWidget(QLabel("--- REZİSTANS KONTROLÜ (Pin 16) ---"))
+        layout.addWidget(QLabel(f"--- REZİSTANS KONTROLÜ (Pin {settings.resistance_pin}) ---"))
+        self.inp_rez_pin = self.create_input("Rezistans Pini (BCM):", settings.resistance_pin)
+        layout.addLayout(self.inp_rez_pin[0])
         self.inp_rez_work = self.create_input("Çalışma Süresi (Dk):", getattr(settings, 'RESISTANCE_WORK_MIN', 1))
         layout.addLayout(self.inp_rez_work[0])
         self.inp_rez_rest = self.create_input("Bekleme Süresi (Dk):", getattr(settings, 'RESISTANCE_REST_MIN', 1))
         layout.addLayout(self.inp_rez_rest[0])
         
+        # Simülasyon Ayarları
+        layout.addWidget(QLabel("")) # Boşluk
+        layout.addWidget(QLabel("--- SİMÜLASYON AYARLARI ---"))
+
+        self.chk_random = QCheckBox("Rastgele Fırın Özellikleri")
+        self.chk_random.setChecked(getattr(settings, 'SIM_IS_RANDOM', True))
+        self.chk_random.toggled.connect(self.toggle_random)
+        layout.addWidget(self.chk_random)
+
+        self.inp_efficiency = self.create_double_input("Verimlilik (0.0 - 1.0):", getattr(settings, 'SIM_EFFICIENCY', 0.5))
+        layout.addLayout(self.inp_efficiency[0])
+
+        btn_randomize = QPushButton("Rastgele Değer Ata")
+        btn_randomize.clicked.connect(self.randomize_value)
+        layout.addWidget(btn_randomize)
+
+        # Yavaş Sensörler
+        default_slow = getattr(settings, 'SLOW_SENSORS', [1, 2, 3, 4])
+        default_slow_str = ",".join(map(str, default_slow)) if isinstance(default_slow, list) else "1,2,3,4"
+        self.inp_slow_sensors = self.create_text_input("Yavaş Sensörler (Örn: 1,2,3,4):", default_slow_str)
+        layout.addLayout(self.inp_slow_sensors[0])
+
+        # Kamera Ayarları
+        layout.addWidget(QLabel("")) # Boşluk
+        layout.addWidget(QLabel("--- KAMERA AYARLARI ---"))
+        self.chk_camera = QCheckBox("Kamera Aktif")
+        self.chk_camera.setChecked(getattr(settings, 'CAMERA_ENABLED', False))
+        layout.addWidget(self.chk_camera)
+
+        # RTSP URL artık settings.IP üzerinden otomatik oluşturuluyor, buradaki input kaldırıldı.
+
+        self.toggle_random(self.chk_random.isChecked()) # Init state
+
         # Kaydet Butonu
         btn_save = QPushButton("Kaydet")
         btn_save.clicked.connect(self.save_settings)
         layout.addWidget(btn_save)
+
+        # Güncelleme Butonu
+        layout.addWidget(QLabel("")) # Boşluk
+        btn_update = QPushButton("Yazılımı Güncelle (GitHub)")
+        btn_update.setStyleSheet("background-color: #ffcccb; color: black;")
+        btn_update.clicked.connect(self.update_software)
+        layout.addWidget(btn_update)
         
     def create_input(self, label_text, default_val):
         layout = QHBoxLayout()
@@ -1010,19 +1090,96 @@ class AdminPanel(QDialog):
         layout.addWidget(lbl)
         layout.addWidget(inp)
         return layout, inp
+
+    def create_double_input(self, label_text, default_val):
+        layout = QHBoxLayout()
+        lbl = QLabel(label_text)
+        inp = QDoubleSpinBox()
+        inp.setRange(0.0, 1.0)
+        inp.setSingleStep(0.01)
+        inp.setValue(float(default_val))
+        layout.addWidget(lbl)
+        layout.addWidget(inp)
+        return layout, inp
+
+    def create_text_input(self, label_text, default_val):
+        layout = QHBoxLayout()
+        lbl = QLabel(label_text)
+        inp = QtWidgets.QLineEdit()
+        inp.setText(str(default_val))
+        layout.addWidget(lbl)
+        layout.addWidget(inp)
+        return layout, inp
+
+    def toggle_random(self, checked):
+        self.inp_efficiency[1].setEnabled(not checked)
+
+    def randomize_value(self):
+        val = random.random()
+        self.inp_efficiency[1].setValue(val)
         
+    def update_software(self):
+        reply = QMessageBox.question(self, 'Güncelleme',
+                                     'Yazılım internet üzerinden güncellenecek ve yeniden başlatılacak.\nDevam etmek istiyor musunuz?',
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            # Show waiting dialog
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Güncelleme")
+            msg.setText("Güncelleme yapılıyor, lütfen bekleyiniz...")
+            msg.setStandardButtons(QMessageBox.NoButton)
+            msg.show()
+            QApplication.processEvents()
+
+            update_script = "/opt/CNS/repo/CNS/update_app.sh"
+            if not os.path.exists(update_script):
+                # Fallback for dev environment
+                update_script = os.path.join(os.getcwd(), "update_app.sh")
+
+            try:
+                # Run update script
+                result = subprocess.run([update_script], capture_output=True, text=True)
+
+                if result.returncode == 0:
+                    QMessageBox.information(self, "Başarılı", "Güncelleme tamamlandı. Uygulama yeniden başlatılıyor.")
+                    # Restart application
+                    python = sys.executable
+                    os.execl(python, python, *sys.argv)
+                else:
+                    QMessageBox.critical(self, "Hata", f"Güncelleme başarısız oldu:\n{result.stderr}\n{result.stdout}")
+            except Exception as e:
+                QMessageBox.critical(self, "Hata", f"Bir hata oluştu: {e}")
+            finally:
+                msg.close()
+
     def save_settings(self):
-        # Ayarları güncelle
-        new_settings_dict = {
-            "DESIRED_ENGINE_MUNITE": self.inp_fan_work[1].value(),
-            "ENGINE_RESTING_MUNITE": self.inp_fan_rest[1].value(),
-            "RESISTANCE_WORK_MIN": self.inp_rez_work[1].value(),
-            "RESISTANCE_REST_MIN": self.inp_rez_rest[1].value()
-        }
-        save_settings_to_file(settings_path, new_settings_dict)
-        global settings; settings = load_settings_module(settings_path) # Reload immediately
-        QMessageBox.information(self, "Bilgi", "Ayarlar güncellendi!")
-        self.close()
+        try:
+            # Ayarları güncelle
+            slow_sensors_text = self.inp_slow_sensors[1].text()
+            try:
+                slow_sensors = [int(x.strip()) for x in slow_sensors_text.split(',') if x.strip().isdigit()]
+            except:
+                slow_sensors = [1, 2, 3, 4]
+
+            new_settings_dict = {
+                "DESIRED_ENGINE_MUNITE": self.inp_fan_work[1].value(),
+                "ENGINE_RESTING_MUNITE": self.inp_fan_rest[1].value(),
+                "RESISTANCE_WORK_MIN": self.inp_rez_work[1].value(),
+                "RESISTANCE_REST_MIN": self.inp_rez_rest[1].value(),
+                "SIM_IS_RANDOM": self.chk_random.isChecked(),
+                "SIM_EFFICIENCY": self.inp_efficiency[1].value(),
+                "fan_right_pin": self.inp_fan_pin[1].value(),
+                "resistance_pin": self.inp_rez_pin[1].value(),
+                "SLOW_SENSORS": slow_sensors,
+                "CAMERA_ENABLED": self.chk_camera.isChecked()
+            }
+            # CAMERA_RTSP_URL artık kullanılmıyor, IP settings'den geliyor
+            save_settings_to_file(settings_path, new_settings_dict)
+            global settings; settings = load_settings_module(settings_path) # Reload immediately
+            QMessageBox.information(self, "Bilgi", "Ayarlar güncellendi!")
+            self.close()
+        except Exception as e:
+            QMessageBox.critical(self, "Hata", f"Ayarlar kaydedilemedi: {e}")
 
 # --- VERİ THREAD ---
 class DataUpdateThread(QtCore.QThread):
@@ -1162,6 +1319,15 @@ class Main(QMainWindow):
         self.key_buffer = [] # Initialize key buffer for global key events
         self.installEventFilter(self) # Install event filter on self
 
+        # Canlı Saat Timer
+        self.live_clock_timer = QtCore.QTimer(self)
+        self.live_clock_timer.timeout.connect(self.update_live_clock)
+        self.live_clock_timer.start(1000)
+
+    def update_live_clock(self):
+        now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        self.ui.txt_time.setText(now)
+
     def eventFilter(self, obj, event):
         if event.type() == QtCore.QEvent.KeyPress:
             key_code = event.key()
@@ -1234,13 +1400,45 @@ class Main(QMainWindow):
         elif txt == "Devam": self.thread.pause_event.clear(); self.ui.btn_Start.setText("Duraklat")
         else: self.start_dialog()
     def start_dialog(self): self.dia = QDialog(); u = Ui_Start_Dialog(); u.setupUi(self.dia); u.btn_Start_P.clicked.connect(lambda: self.begin_process(u)); self.dia.exec_()
+
     def begin_process(self, u):
+        # Durdur canlı saati (başlangıç zamanı olarak kalsın)
+        if self.live_clock_timer.isActive():
+            self.live_clock_timer.stop()
+
         now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         rid = int(report_index()) + 1
         insert_report(rid, "1", now, "IP", u.txt_type.text(), u.txt_amount.text(), u.txt_pieces.text(), u.txtArea_info.toPlainText())
         self.ui.txt_time.setText(now)
+        self.ui.tableWidget.setRowCount(0) # Eski verileri temizle
+
+        # Kamera Kontrolü
+        if getattr(settings, 'CAMERA_ENABLED', False):
+            print("Kamera Modu Aktif. Kamera açılıyor...")
+            # RTSP URL oluşturma
+            ip_addr = getattr(settings, 'IP', '192.168.1.9')
+            # Eğer ip_addr boşsa varsayılanı kullan
+            if not ip_addr: ip_addr = '192.168.1.9'
+
+            rtsp = f"rtsp://admin:L2F4F47D@{ip_addr}:554/cam/realmonitor?channel=1&subtype=0"
+            print(f"RTSP URL: {rtsp}")
+
+            self.camera_window = video.KameraVibe(rtsp, rid)
+            # Kamera işlemi bittiğinde simülasyonu başlat
+            self.camera_window.process_completed.connect(self.start_simulation_thread)
+            self.camera_window.show()
+            self.dia.close()
+        else:
+            self.start_simulation_thread()
+            self.dia.close()
+
+    def start_simulation_thread(self, *args):
         self.thread = DataUpdateThread(); self.thread.data_updated.connect(self.on_data); self.thread.finished.connect(self.on_finished); self.thread.start()
-        self.ui.btn_Start.setText("Duraklat"); self.dia.close()
+        self.ui.btn_Start.setText("Duraklat")
+        # Eğer kamera varsa kapat (zaten kapanmış olabilir ama garanti olsun)
+        if hasattr(self, 'camera_window'):
+            self.camera_window.close()
+
     def on_data(self, t_str, *args):
         vals = args[:15]; cnt = args[15]; row = self.ui.tableWidget.rowCount(); self.ui.tableWidget.insertRow(row)
         db_vals = []
@@ -1256,11 +1454,16 @@ class Main(QMainWindow):
     def on_finished(self):
         self.ui.btn_Start.setText("Başlat"); rid = report_index(); set_report_end_time(rid)
         QMessageBox.information(self, "Bitti", f"İşlem tamamlandı.\nRapor No: {rid}")
+        # İşlem bitti, canlı saati tekrar başlat
+        self.live_clock_timer.start(1000)
     def settings_click(self):
         d = QDialog(); u = Ui_Ui_Settings_Dialog(); u.setupUi(d)
         u.line_Ekds.setText(str(settings.DESIRED_TEMP))
         u.line_DSC.setText(str(settings.DESIRED_SUCCESS_COUNT))
         u.line_FIRM.setText(str(settings.FIRM_NAME))
+        u.line_OVEN.setText(str(settings.OVEN_NO))
+        u.chk_validation.setChecked(getattr(settings, 'VALITADITON', False))
+        u.line_KameraIP.setText(str(getattr(settings, 'IP', '0.0.0.0')))
         
         # Resistance Max/Min Load
         u.line_Resistance_Max.setText(str(settings.RESISTANCE_MAX))
@@ -1276,6 +1479,9 @@ class Main(QMainWindow):
                     "DESIRED_TEMP": float(u.line_Ekds.text()),
                     "DESIRED_SUCCESS_COUNT": int(u.line_DSC.text()),
                     "FIRM_NAME": u.line_FIRM.text(),
+                    "OVEN_NO": u.line_OVEN.text(),
+                    "VALITADITON": u.chk_validation.isChecked(),
+                    "IP": u.line_KameraIP.text(),
                     "RESISTANCE_MAX": float(u.line_Resistance_Max.text()),
                     "RESISTANCE_MIN": float(u.line_Resistance_Min.text())
                 }
@@ -1287,6 +1493,8 @@ class Main(QMainWindow):
                 QMessageBox.information(self, "Bilgi", "Ayarlar kaydedildi.")
             except ValueError:
                 QMessageBox.warning(self, "Hata", "Lütfen sayısal değerleri doğru giriniz.")
+            except Exception as e:
+                QMessageBox.critical(self, "Hata", f"Kayıt Hatası: {e}")
                 
         u.btn_SettingsSave.clicked.connect(save); d.exec_()
 

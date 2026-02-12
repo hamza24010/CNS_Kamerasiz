@@ -16,10 +16,24 @@ echo "Installing system dependencies..."
 apt-get update
 # libatlas-base-dev removed as it caused issues on newer Debian versions. 
 # Numpy wheels usually include necessary libraries.
-apt-get install -y libgl1 libqt5gui5 libqt5widgets5
+# Adding libxcb and related libraries to fix "Could not find the Qt platform plugin 'xcb'"
+# Added libxcb-cursor0 and libxcb-util1 which are critical for newer Qt versions
+apt-get install -y libgl1 libqt5gui5 libqt5widgets5 libxcb-xinerama0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xfixes0 libxcb-shape0 libxcb-sync1 libxcb-shm0 libx11-xcb1 libxcb-cursor0 libxcb-util1
 
 echo "Creating installation directory at $INSTALL_DIR..."
 mkdir -p "$INSTALL_DIR"
+mkdir -p "$INSTALL_DIR/repo"
+
+echo "Copying repository for auto-update..."
+# Copy the entire git repository to /opt/CNS/repo
+# Assuming install.sh is run from inside CNS/ folder, so repo root is ..
+if [ -d "../.git" ]; then
+    cp -r ../. "$INSTALL_DIR/repo/"
+else
+    echo "Warning: .git directory not found in parent. Auto-update may not work."
+    # Copy current dir as fallback
+    cp -r . "$INSTALL_DIR/repo/CNS/" 2>/dev/null || true
+fi
 
 echo "Copying application files..."
 # Assuming we are running from the source directory and build.sh has been run
@@ -32,7 +46,8 @@ fi
 
 # Copy assets
 cp "mainDb.sqlite" "$INSTALL_DIR/" || echo "Warning: mainDb.sqlite not found, skipping."
-cp "icon.png" "$INSTALL_DIR/$ICON_NAME" || echo "Warning: icon.png not found, skipping."
+# Copy icon to a public location so the Desktop environment can read it
+cp "icon.png" "/usr/share/pixmaps/$ICON_NAME" || echo "Warning: icon.png not found, skipping."
 cp "DejaVuSans.ttf" "$INSTALL_DIR/" || echo "Warning: DejaVuSans.ttf not found, skipping."
 cp "settings.py" "$INSTALL_DIR/" || echo "Warning: settings.py not found, skipping."
 
@@ -60,7 +75,7 @@ Type=Application
 Name=CNS Control
 Comment=CNS Control Application
 Exec=sudo $INSTALL_DIR/$APP_NAME
-Icon=$INSTALL_DIR/$ICON_NAME
+Icon=/usr/share/pixmaps/$ICON_NAME
 Terminal=false
 StartupNotify=true
 Categories=Utility;
