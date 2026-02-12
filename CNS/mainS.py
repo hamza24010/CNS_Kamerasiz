@@ -951,21 +951,30 @@ class MatplotlibDialog(QDialog):
         conn.close()
         time_data = [self.convert_time(row[15]) for row in data]
         y_data = [[float(value) for value in row[:15]] for row in data]
-        plt.figure(figsize=(16, 9))
+
+        # Use Figure object directly to avoid backend conflicts
+        fig = Figure(figsize=(16, 9))
+        ax = fig.add_subplot(111)
+
         for i in range(15):
             values_to_plot = [float(y[i]) if y[i] != 00.00 else None for y in y_data]
             if any(val is not None for val in values_to_plot):
                 if i == 13:
-                    plt.plot(time_data, values_to_plot, marker='*', label='Ortam 1')
+                    ax.plot(time_data, values_to_plot, marker='*', label='Ortam 1')
                 elif i == 14:
-                    plt.plot(time_data, values_to_plot, marker='*', label='Ortam 2')
+                    ax.plot(time_data, values_to_plot, marker='*', label='Ortam 2')
                 else:
-                    plt.plot(time_data, values_to_plot, marker='o', label=f'Prob{i + 1}')
-        plt.title("Parti " + str(id) + " Grafik Detayı")
-        plt.xticks(rotation=45)
-        plt.legend(loc='upper right', bbox_to_anchor=(1, 0.5))
+                    ax.plot(time_data, values_to_plot, marker='o', label=f'Prob{i + 1}')
+
+        ax.set_title("Parti " + str(id) + " Grafik Detayı")
+        # For object-oriented API, setting xticks rotation is slightly different or needs manual setting
+        # We can use fig.autofmt_xdate() or set tick parameters
+        ax.set_xticklabels(time_data, rotation=45)
+        ax.legend(loc='upper right', bbox_to_anchor=(1, 0.5))
+
         save_path = "filtered_graph_real.png"
-        plt.savefig(save_path)
+        fig.savefig(save_path)
+
         img = PILImage.open(save_path)
         rotated_img = img.rotate(-90, expand=True)
         rotated_img.save(save_path)
@@ -984,21 +993,28 @@ class MatplotlibDialog(QDialog):
         conn.close()
         time_data = [self.convert_time(row[15]) for row in data]
         y_data = [list(row[:15]) for row in data]
-        plt.figure(figsize=(16, 9))
+
+        # Use Figure object directly
+        fig = Figure(figsize=(16, 9))
+        ax = fig.add_subplot(111)
+
         for i in range(15):
             values_to_plot = [float(y[i]) if y[i] != 00.00 else None for y in y_data]
             if any(val is not None for val in values_to_plot):
                 if i == 13:
-                    plt.plot(time_data, values_to_plot, marker='*', label='Ortam 1')
+                    ax.plot(time_data, values_to_plot, marker='*', label='Ortam 1')
                 elif i == 14:
-                    plt.plot(time_data, values_to_plot, marker='*', label='Ortam 2')
+                    ax.plot(time_data, values_to_plot, marker='*', label='Ortam 2')
                 else:
-                    plt.plot(time_data, values_to_plot, marker='o', label=f'Prob{i + 1}')
-        plt.title("Parti " + str(id) + " Grafik Detayı")
-        plt.xticks(rotation=45)
-        plt.legend(loc='upper right', bbox_to_anchor=(1, 0.5))
+                    ax.plot(time_data, values_to_plot, marker='o', label=f'Prob{i + 1}')
+
+        ax.set_title("Parti " + str(id) + " Grafik Detayı")
+        ax.set_xticklabels(time_data, rotation=45)
+        ax.legend(loc='upper right', bbox_to_anchor=(1, 0.5))
+
         save_path = "graph_TEN.png"
-        plt.savefig(save_path)
+        fig.savefig(save_path)
+
         img = PILImage.open(save_path)
         rotated_img = img.rotate(-90, expand=True)
         rotated_img.save(save_path)
@@ -1181,13 +1197,11 @@ class DataUpdateThread(QtCore.QThread):
     data_updated = QtCore.pyqtSignal(str, *[str]*16)
     finished = QtCore.pyqtSignal()
 
-    def __init__(self):
+    def __init__(self, rid):
         super().__init__()
+        self.rid = rid
         # Ayarları Yükle
         global settings; settings = load_settings_module(get_writable_settings_path())
-        self.sim = ISPM15Simulator()
-        self.counter = 0
-        self.target_count = settings.DESIRED_SUCCESS_COUNT
         self.sim = ISPM15Simulator()
         self.counter = 0
         self.target_count = settings.DESIRED_SUCCESS_COUNT
@@ -1197,10 +1211,18 @@ class DataUpdateThread(QtCore.QThread):
     def run(self):
         self.stop_event = threading.Event(); self.pause_event = threading.Event()
         
+        # Dedicated DB connection for this thread
+        conn = get_db()
+
         # GPIO Kurulumu
-        GPIO.setmode(GPIO.BCM)
-        GPIO.setup(settings.resistance_pin, GPIO.OUT, initial=GPIO.HIGH) # Rezistans (Pin 13)
-        GPIO.setup(settings.fan_right_pin, GPIO.OUT, initial=GPIO.HIGH)  # Fan (Pin 24)
+        try:
+            GPIO.setmode(GPIO.BCM)
+            GPIO.setwarnings(False)
+            GPIO.setup(settings.resistance_pin, GPIO.OUT, initial=GPIO.HIGH) # Rezistans (Pin 13)
+            GPIO.setup(settings.fan_right_pin, GPIO.OUT, initial=GPIO.HIGH)  # Fan (Pin 24)
+        except Exception as e:
+            print(f"GPIO Setup Error (Ignored): {e}")
+            # Devam ediyoruz, çünkü muhtemelen Main class zaten setup yapti
         
         dt_first_time = datetime.datetime.now() - datetime.timedelta(seconds=settings.DESIRED_SECONDS)
         
@@ -1286,7 +1308,20 @@ class DataUpdateThread(QtCore.QThread):
                 
             dt_first_time += datetime.timedelta(seconds=settings.DESIRED_SECONDS)
             t_str = dt_first_time.strftime('%Y-%m-%d %H:%M:%S')
-            self.data_updated.emit(t_str, *map(str, vals), str(self.counter))
+
+            # Format values for DB and UI
+            formatted_vals = [f"{v:.2f}" for v in vals]
+            rem = settings.DESIRED_SUCCESS_COUNT - self.counter
+
+            # Write to DB in background thread
+            try:
+                conn.execute("INSERT INTO Report_Details VALUES (NULL,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                             (self.rid, *formatted_vals, "0", "0", t_str, rem))
+                conn.commit()
+            except Exception as e:
+                print(f"DB Error in thread: {e}")
+
+            self.data_updated.emit(t_str, *formatted_vals, str(self.counter))
             
             if self.turbo:
                 time.sleep(0.001) # Turbo: Bekleme yok
@@ -1299,7 +1334,9 @@ class DataUpdateThread(QtCore.QThread):
             GPIO.output(settings.fan_right_pin, GPIO.HIGH)
             GPIO.output(settings.resistance_pin, GPIO.HIGH)
             print("Simülasyon Bitti. Röleler Kapatıldı.")
-            self.finished.emit()
+
+        conn.close()
+        self.finished.emit()
 
 # --- MAIN ---
 class Main(QMainWindow):
@@ -1396,29 +1433,42 @@ class Main(QMainWindow):
         else: self.start_dialog()
     def start_dialog(self): self.dia = QDialog(); u = Ui_Start_Dialog(); u.setupUi(self.dia); u.btn_Start_P.clicked.connect(lambda: self.begin_process(u)); self.dia.exec_()
 
+    def get_rtsp_url(self):
+        ip_addr = getattr(settings, 'IP', '192.168.1.9')
+        if not ip_addr: ip_addr = '192.168.1.9'
+
+        # Temizlik
+        ip_addr = str(ip_addr).strip().replace(',', '.')
+
+        # Eger kullanici tam bir RTSP adresi girdiyse, direkt onu dondur (Manuel Override)
+        if ip_addr.lower().startswith("rtsp://"):
+            return ip_addr
+
+        # IP Düzeltme Mantığı (0.104 -> 192.168.0.104)
+        if ip_addr.startswith("0."):
+            # Kullanici "0.104" giriyor -> Biz "192.168.0.104" istiyoruz.
+            ip_addr = "192.168." + ip_addr
+
+        return f"rtsp://admin:arscns35@{ip_addr}:554/cam/realmonitor?channel=1&subtype=0"
+
     def begin_process(self, u):
         # Durdur canlı saati (başlangıç zamanı olarak kalsın)
         if self.live_clock_timer.isActive():
             self.live_clock_timer.stop()
 
         now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        rid = int(report_index()) + 1
-        insert_report(rid, "1", now, "IP", u.txt_type.text(), u.txt_amount.text(), u.txt_pieces.text(), u.txtArea_info.toPlainText())
+        self.current_rid = int(report_index()) + 1
+        insert_report(self.current_rid, "1", now, "IP", u.txt_type.text(), u.txt_amount.text(), u.txt_pieces.text(), u.txtArea_info.toPlainText())
         self.ui.txt_time.setText(now)
         self.ui.tableWidget.setRowCount(0) # Eski verileri temizle
 
         # Kamera Kontrolü
         if getattr(settings, 'CAMERA_ENABLED', False):
             print("Kamera Modu Aktif. Kamera açılıyor...")
-            # RTSP URL oluşturma
-            ip_addr = getattr(settings, 'IP', '192.168.1.9')
-            # Eğer ip_addr boşsa varsayılanı kullan
-            if not ip_addr: ip_addr = '192.168.1.9'
-
-            rtsp = f"rtsp://admin:L2F4F47D@{ip_addr}:554/cam/realmonitor?channel=1&subtype=0"
+            rtsp = self.get_rtsp_url()
             print(f"RTSP URL: {rtsp}")
 
-            self.camera_window = video.KameraVibe(rtsp, rid)
+            self.camera_window = video.KameraVibe(rtsp, self.current_rid)
             # Kamera işlemi bittiğinde simülasyonu başlat
             self.camera_window.process_completed.connect(self.start_simulation_thread)
             self.camera_window.show()
@@ -1428,7 +1478,7 @@ class Main(QMainWindow):
             self.dia.close()
 
     def start_simulation_thread(self, *args):
-        self.thread = DataUpdateThread(); self.thread.data_updated.connect(self.on_data); self.thread.finished.connect(self.on_finished); self.thread.start()
+        self.thread = DataUpdateThread(self.current_rid); self.thread.data_updated.connect(self.on_data); self.thread.finished.connect(self.on_finished); self.thread.start()
         self.ui.btn_Start.setText("Duraklat")
         # Eğer kamera varsa kapat (zaten kapanmış olabilir ama garanti olsun)
         if hasattr(self, 'camera_window'):
@@ -1436,21 +1486,37 @@ class Main(QMainWindow):
 
     def on_data(self, t_str, *args):
         vals = args[:15]; cnt = args[15]; row = self.ui.tableWidget.rowCount(); self.ui.tableWidget.insertRow(row)
-        db_vals = []
         for i, v in enumerate(vals):
-            fv = float(v); item = QTableWidgetItem(f"{fv:.2f}"); db_vals.append(f"{fv:.2f}")
+            fv = float(v); item = QTableWidgetItem(v)
             if fv >= settings.DESIRED_TEMP and fv > 0.1: item.setBackground(QColor(0,255,0))
             self.ui.tableWidget.setItem(row, i, item)
             box = getattr(self.ui, f"txt_prob_status_{i+1}" if i > 0 else "txt_prob_status", None)
-            if box: box.setText(f"{fv:.2f}")
+            if box: box.setText(v)
         rem = settings.DESIRED_SUCCESS_COUNT - int(cnt)
         self.ui.txt_step.setText(str(rem)); self.ui.tableWidget.setItem(row, 15, QTableWidgetItem(str(rem))); self.ui.tableWidget.setItem(row, 16, QTableWidgetItem(t_str)); self.ui.tableWidget.scrollToBottom()
-        insert_report_step(report_index(), *db_vals, "0", "0", t_str, rem)
+
     def on_finished(self):
+        # Kamera kontrolü: İşlem bittikten sonra kapaklar için video
+        if getattr(settings, 'CAMERA_ENABLED', False):
+            try:
+                rtsp = self.get_rtsp_url()
+                print("İşlem bitti. 3. Video (Kapaklar) için kamera açılıyor...")
+                # start_phase=3 modunda başlat
+                self.camera_end_window = video.KameraVibe(rtsp, self.current_rid, start_phase=3)
+                self.camera_end_window.process_completed.connect(lambda: self.finalize_process())
+                self.camera_end_window.show()
+            except Exception as e:
+                print(f"Kamera (Bitiş) Hatası: {e}")
+                self.finalize_process()
+        else:
+            self.finalize_process()
+
+    def finalize_process(self):
         self.ui.btn_Start.setText("Başlat"); rid = report_index(); set_report_end_time(rid)
         QMessageBox.information(self, "Bitti", f"İşlem tamamlandı.\nRapor No: {rid}")
         # İşlem bitti, canlı saati tekrar başlat
         self.live_clock_timer.start(1000)
+
     def settings_click(self):
         d = QDialog(); u = Ui_Ui_Settings_Dialog(); u.setupUi(d)
         u.line_Ekds.setText(str(settings.DESIRED_TEMP))

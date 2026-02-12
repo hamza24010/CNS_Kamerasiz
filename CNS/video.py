@@ -92,11 +92,12 @@ class VideoWorker(QThread):
 class KameraVibe(QWidget):
     process_completed = pyqtSignal(int)
 
-    def __init__(self, rtsp_url, parti_no):
+    def __init__(self, rtsp_url, parti_no, start_phase=1):
         super().__init__()
         self.rtsp_url = rtsp_url
+        print(f"Kamera Bağlantısı deneniyor: {self.rtsp_url}")
         self.parti_no = parti_no
-        self.process_idx = 1
+        self.process_idx = start_phase
 
         # Çıktı klasörü oluşturma
         # Çıktı klasörü oluşturma
@@ -133,7 +134,12 @@ class KameraVibe(QWidget):
         self.video_label.setFixedSize(PREVIEW_WIDTH, PREVIEW_HEIGHT)
 
         # Başlat butonu
-        self.button = QPushButton("Fırın boş durumda 1. Video Kaydını Başlat")
+        if self.process_idx == 3:
+            btn_text = "İşlem Tamamlandı. 3. Kaydı Başlat"
+        else:
+            btn_text = "Fırın boş durumda 1. Video Kaydını Başlat"
+
+        self.button = QPushButton(btn_text)
         btn_font = self.button.font()
         btn_font.setPointSize(14)
         btn_font.setBold(True)
@@ -204,13 +210,25 @@ class KameraVibe(QWidget):
             self.process_idx = 2
             self.button.setText("Fırın dolduruldu. 2. Kaydı Başlat")
             self.button.setEnabled(True)
-        elif self.process_idx==2:
+        elif self.process_idx == 2:
             QMessageBox.information(
                 self, "Bilgi", "2. Kayıt tamamlandı. Ölçüm Başlatılıyor."
             )
-            
             self.process_completed.emit(self.process_idx)
             self.button.setEnabled(False)
+        elif self.process_idx == 3:
+            QMessageBox.information(
+                self, "Bilgi", "3. Kayıt tamamlandı. Fırın kapaklarını açın ve 4. Kaydı Başlatın."
+            )
+            self.process_idx = 4
+            self.button.setText("Kapaklar açık. 4. Kaydı Başlat")
+            self.button.setEnabled(True)
+        elif self.process_idx == 4:
+            QMessageBox.information(
+                self, "Bilgi", "Son kayıt (4. Video) tamamlandı. İşlem Bitiyor."
+            )
+            self.process_completed.emit(self.process_idx)
+            self.close()
 
     def start_third_phase(self):
         # Bilgi popup
